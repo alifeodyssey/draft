@@ -48,7 +48,7 @@ def _load_registry() -> dict[str, TaskEntry]:
     """Read tasks.yaml into TaskEntry objects (``package:`` is relative to this package)."""
     if not _TASKS_YAML.exists():
         raise FileNotFoundError(f"Task registry not found: {_TASKS_YAML}")
-    with _TASKS_YAML.open() as f:
+    with _TASKS_YAML.open(encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     raw_tasks = data.get("tasks", {})
     if not raw_tasks:

@@ -36,7 +36,7 @@ from ..trends.motor_catalog import resolve_catalog_motors
 # ── YAML helpers ───────────────────────────────────────────────────────────────
 
 def _load_yaml(path: Path) -> dict:
-    with path.open() as f:
+    with path.open(encoding='utf-8') as f:
         return yaml.safe_load(f) or {}
 
 

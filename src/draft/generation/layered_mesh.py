@@ -154,7 +154,7 @@ class LayeredMeshBuilder:
 
     @classmethod
     def from_yaml(cls, yaml_path) -> 'LayeredMeshBuilder':
-        with open(yaml_path) as f:
+        with open(yaml_path, encoding='utf-8') as f:
             cfg = yaml.safe_load(f)
         m = cfg['mesh']
         return cls(
@@ -287,7 +287,7 @@ class LayeredMeshBuilder:
         yaml_path = output_dir / (props_filename or f'{self.name}_inertial_properties.yaml')
 
         mesh.export(str(stl_path))
-        with open(yaml_path, 'w') as f:
+        with open(yaml_path, 'w', encoding='utf-8') as f:
             yaml.dump({
                 'mass':  float(props['mass']),
                 'com_x': float(props['center_of_mass'][0]),

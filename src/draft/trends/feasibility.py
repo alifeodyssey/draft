@@ -42,7 +42,7 @@ class FeasibilityViolation(ValueError):
 
 
 def _load(path: Path) -> dict:
-    with Path(path).open() as f:
+    with Path(path).open(encoding="utf-8") as f:
         return json.load(f)
 
 

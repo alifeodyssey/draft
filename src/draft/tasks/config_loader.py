@@ -21,7 +21,7 @@ def load_run_config(path: str | Path) -> dict[str, Any]:
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
-    with path.open() as f:
+    with path.open(encoding="utf-8") as f:
         data = yaml.safe_load(f) or {}
     data = {k: v for k, v in data.items() if v is not None}
 

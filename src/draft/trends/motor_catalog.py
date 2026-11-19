@@ -32,7 +32,7 @@ def load_catalog() -> list[dict]:
             )
             _CATALOG["rows"] = []
         else:
-            with CATALOG_JSON.open() as f:
+            with CATALOG_JSON.open(encoding="utf-8") as f:
                 _CATALOG["rows"] = json.load(f)
     return _CATALOG["rows"]
 
