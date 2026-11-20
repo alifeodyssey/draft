@@ -32,6 +32,7 @@ VARIANT_MASS_KG = {
                   "hand", "waist_link", "torso", "hip_link", "thigh", "shank",
                   "foot"}),
     ("quadruped", {"hip_link", "thigh", "shank"}),
+    ("galileo_x", {"hip_link", "thigh", "shank"}),
 ])
 def test_every_member_weighs_its_structural_trend(tmp_path, robot, classes):
     """Each member weighs its class trend's mass, minus fixed mass in the segment
@@ -64,10 +65,10 @@ def _total_mass(out: Path) -> float:
 
 def test_every_shipped_robot_is_discoverable():
     """Robots are discovered from their directories."""
-    assert set(available()) == {"humanoid", "quadruped"}
+    assert set(available()) == {"humanoid", "quadruped", "galileo_x"}
 
 
-@pytest.mark.parametrize("robot", sorted(EXPECTED_MASS_KG))
+@pytest.mark.parametrize("robot", ["humanoid", "quadruped", "galileo_x"])
 def test_robot_generates_and_compiles(tmp_path, robot):
     out = _generate(tmp_path, robot)
     xmls = {p.name for p in out.glob("*.xml")}

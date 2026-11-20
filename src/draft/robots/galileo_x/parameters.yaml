@@ -1,0 +1,70 @@
+# Illustrative three-joint Galileo X-inspired concept, NOT measured product data.
+# SI internally; thigh_cant_deg is the sole degree input, converted explicitly.
+_design_provenance: "Illustrative geometry; user-specified pitch/yaw/pitch topology; Draft trend-estimated masses and actuator envelopes."
+
+# Inherited quadruped L-class example; exceeds the measured actuator frontier.
+# Keep its warnings visible. Packing and structure-overlap gates remain strict.
+L_motor_effort: 150.0
+L_motor_velocity: 50.0
+L_motor_gear: 5.0
+L_motor_friction: 0.1
+L_motor_damping: 0.01
+allow_hypothetical: true
+j1_mot: L
+j2_mot: L
+j3_mot: L
+j1_range: [-2.5, 2.5]
+j2_range: [-1.5707963267948966, 1.5707963267948966]
+j3_range: [-2.8, 0.0]
+
+# Illustrative lengths [m]: thigh from the canted mount to knee axis;
+# shank from knee axis to foot centre. The output connector is additional.
+torso_lx: 0.25
+torso_ly: 0.22
+torso_lz: 0.11
+torso_chamfer: 0.35
+upper_leg_link_length: 0.22
+lower_leg_link_length: 0.22
+thigh_cant_deg: 30.0
+thigh_cant_rad: ${thigh_cant_deg * pi / 180}
+assembly_clearance: 0.005
+link_motor_penetration: 0.005
+link_render_radius_scale: 0.70
+lower_leg_render_scale: 0.8
+foot_sphere_scale: 1.5
+
+# Trend-owned density declarations; values below are replaced and recorded.
+mass_composition_reference: quadruped
+torso_rho: 654.0
+thigh_rho: 345.0
+shank_rho: 637.1
+motor_rho: 2700.0
+
+# Envelope-derived assembly, not measured dimensions. J1 housings sit beyond
+# the front/rear end faces, with their axial envelopes inside the torso width.
+# The coaxial abduction member still carries the J2 stator outwards along y.
+j1_mount_x: ${torso_lx / 2 + j1_motor_r + assembly_clearance}
+j1_mount_y: ${torso_ly / 2 - j1_motor_L / 2 - assembly_clearance}
+hip_abduction_link_length: ${j1_motor_L / 2 + j2_motor_r + assembly_clearance}
+hip_link_render_r: ${min(j1_motor_r, j2_motor_r, j2_motor_L / 2) * link_render_radius_scale}
+upper_leg_link_render_r: ${min(j3_motor_r, j3_motor_L / 2) * link_render_radius_scale}
+lower_leg_link_render_r: ${upper_leg_link_render_r * lower_leg_render_scale}
+foot_sphere_r: ${lower_leg_link_render_r * foot_sphere_scale}
+# Clear the J2 output face even at the edge of the canted structural cylinder.
+j2_output_offset: ${j2_motor_L / 2 + upper_leg_link_render_r * abs(sin(thigh_cant_rad)) + assembly_clearance}
+thigh_joint_span: ${sqrt(upper_leg_link_length ** 2 + j2_output_offset ** 2 + 2 * upper_leg_link_length * j2_output_offset * cos(thigh_cant_rad))}
+size_metric_expr: ${thigh_joint_span + lower_leg_link_length}
+standing_height: ${j2_output_offset + (upper_leg_link_length + lower_leg_link_length) * cos(thigh_cant_rad) + foot_sphere_r}
+
+# sx: front/back; sy: left/right. Explicit axes give symmetric commands.
+_legs:
+  - {name: fl, sx: 1, sy: 1}
+  - {name: fr, sx: 1, sy: -1}
+  - {name: rl, sx: -1, sy: 1}
+  - {name: rr, sx: -1, sy: -1}
+
+link_color: 0.294 0.447 0.686 1.0
+motor_color: 0.161 0.243 0.376 1.0
+mot_detail_color: 0.067 0.102 0.161 1.0
+torso_color: 0.294 0.447 0.686 1.0
+foot_color: 0.180 0.275 0.427 1.0

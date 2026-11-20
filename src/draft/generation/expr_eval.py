@@ -8,6 +8,7 @@ from .mounting import (edge_outward_normal, edge_point, mount_euler, mount_pos,
 
 # Names an expression may use: arithmetic plus root-outline placement helpers.
 _SAFE = {'pi': math.pi, 'abs': abs, 'min': min, 'max': max, 'sqrt': math.sqrt,
+         'sin': math.sin, 'cos': math.cos,
          'len': len, 'round': round,
          'mount_pos': mount_pos, 'mount_euler': mount_euler,
          'rect_outline': rect_outline,

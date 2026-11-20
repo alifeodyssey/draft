@@ -1,0 +1,93 @@
+# x forward, y left, z up. Joint axes belong to each moving body's local frame.
+# J1 stator -> pitch -> J2 stator -> yaw -> canted thigh/J3 stator -> knee.
+# Whole actuator envelopes/masses stay upstream, following Draft's convention.
+name: torso_link
+type: root
+color: ${torso_color}
+pos: [0, 0, "${standing_height}"]
+sites:
+  - {name: imu, pos: [0, 0, 0]}
+sensors:
+  - {type: gyro, name: imu_ang_vel, site: imu}
+  - {type: velocimeter, name: imu_lin_vel, site: imu}
+  - {type: accelerometer, name: imu_lin_acc, site: imu}
+
+children:
+  - for_each: ${_legs}
+    as: leg
+    node:
+      name: ${leg.name}_j1_housing
+      type: basic
+      pos: ["${leg.sx * j1_mount_x}", "${leg.sy * j1_mount_y}", 0]
+      geometry:
+        link_l: 0
+        motor_axis: y
+        motor_class: ${j1_mot}
+        motor_for: j1
+      children:
+        - name: ${leg.name}_j1_link
+          type: basic
+          pos: [0, 0, 0]
+          joint:
+            name: ${leg.name}_j1
+            axis: "${'y' if leg.sx > 0 else '-y'}"
+            range: ${j1_range}
+            motor_class: ${j1_mot}
+          geometry:
+            link_axis: "${'y' if leg.sy > 0 else '-y'}"
+            link_l: ${hip_abduction_link_length}
+            link_mass_class: hip_link
+            link_render_r: ${hip_link_render_r}
+            motor_axis: z
+            motor_class: ${j2_mot}
+            motor_for: j2
+          children:
+            - name: ${leg.name}_j2_link
+              type: basic
+              pos: [0, "${leg.sy * hip_abduction_link_length}", 0]
+              joint:
+                name: ${leg.name}_j2
+                axis: "${'z' if leg.sx * leg.sy > 0 else '-z'}"
+                range: ${j2_range}
+                motor_class: ${j2_mot}
+              geometry:
+                link_axis: -z
+                link_l: ${j2_output_offset}
+                link_mass_class: thigh
+                link_render_r: ${upper_leg_link_render_r}
+                motor_class: null
+              children:
+                # The fixed cant belongs below the yaw joint: it changes the
+                # thigh direction without tilting J2's own rotation axis.
+                - name: ${leg.name}_thigh_link
+                  type: basic
+                  pos: [0, 0, "${-j2_output_offset}"]
+                  euler: [0, "${-leg.sx * thigh_cant_rad}", 0]
+                  geometry:
+                    link_axis: -z
+                    link_l: ${upper_leg_link_length}
+                    link_mass_class: thigh
+                    link_render_r: ${upper_leg_link_render_r}
+                    motor_axis: y
+                    motor_class: ${j3_mot}
+                    motor_for: j3
+                  children:
+                    - name: ${leg.name}_shank_link
+                      type: sphere
+                      pos: [0, 0, "${-upper_leg_link_length}"]
+                      joint:
+                        name: ${leg.name}_j3
+                        axis: "${'-y' if leg.sx > 0 else 'y'}"
+                        range: ${j3_range}
+                        motor_class: ${j3_mot}
+                      geometry:
+                        link_axis: -z
+                        link_l: ${lower_leg_link_length}
+                        link_mass_class: shank
+                        link_rho: ${shank_rho}
+                        link_render_r: ${lower_leg_link_render_r}
+                        sphere_dir: 1
+                        sphere_r: ${foot_sphere_r}
+                        sphere_color: ${foot_color}
+                      sites:
+                        - {name: "${leg.name}_foot", pos: [0, 0, "${-lower_leg_link_length}"]}

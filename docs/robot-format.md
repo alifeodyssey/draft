@@ -115,11 +115,15 @@ The top node is the root. Every node has `name` and `type`, plus:
 damping, friction, armature). `geometry.motor_class` sets the actuator the body
 draws at its tip, which drives the **child** joint. The two often differ.
 
-`${expr}` is evaluated with only `pi abs min max sqrt len round`, the helpers
+`${expr}` is evaluated with only `pi abs min max sqrt sin cos len round`, the helpers
 `mount_pos mount_euler edge_point edge_outward_normal rect_outline`, and any
 `for_each` variable. A string that is exactly `${...}` keeps its type (float,
 list); otherwise each `${...}` is substituted in. Quote it inside a YAML flow
 list: `pos: ["${torso_lx / 2}", 0, 0]` (unquoted is a parse error).
+
+`sin` and `cos` take radians. Convert a degree input explicitly, for example
+`${thigh_cant_deg * pi / 180}`. Fixed body `euler` rotations use radians too;
+structural joint spans and parallel-axis distances include those rotations.
 
 ### Link primitives
 

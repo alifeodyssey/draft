@@ -1,0 +1,7 @@
+# Illustrative torso envelope. J1 housings sit beyond its front/rear end faces.
+name: torso
+axis: x
+density_param: torso_rho
+layers:
+  - {pos: "${-torso_lx / 2}", lx: "${torso_ly}", ly: "${torso_lz}", chamfer: "${torso_chamfer}"}
+  - {pos: "${torso_lx / 2}", lx: "${torso_ly}", ly: "${torso_lz}", chamfer: "${torso_chamfer}"}

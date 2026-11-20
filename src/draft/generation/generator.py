@@ -20,6 +20,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+import mujoco
+import numpy as np
 import yaml
 
 from .expr_eval import attrdict, resolve
@@ -251,8 +253,10 @@ def _joint_axis(joint: dict) -> tuple | None:
     """A tree joint's axis as a unit vector in its body frame, or None."""
     a = joint.get('axis')
     if isinstance(a, str):
-        return {'x': (1.0, 0.0, 0.0), 'y': (0.0, 1.0, 0.0),
-                'z': (0.0, 0.0, 1.0)}.get(a.strip().lstrip('+-'))
+        axis = a.strip()
+        v = {'x': (1.0, 0.0, 0.0), 'y': (0.0, 1.0, 0.0),
+             'z': (0.0, 0.0, 1.0)}.get(axis.lstrip('+-'))
+        return tuple(-x for x in v) if v and axis.startswith('-') else v
     if isinstance(a, (list, tuple)) and len(a) == 3:
         v = [float(x) for x in a]
         n = math.sqrt(sum(x * x for x in v))
@@ -274,27 +278,44 @@ def _assign_structural_mass(tree: dict, fits: LinkTrends,
     def pos(node):
         return [float(v) for v in (node.get('pos') or (0.0, 0.0, 0.0))]
 
-    def walk(node, seg, offset, is_root=False):
+    def rotation(node):
+        # Match SpecEmitter's intrinsic xyz Euler convention, including mixed rotations.
+        angles = node.get('euler')
+        if not angles:
+            return np.eye(3)
+        quat, matrix = np.empty(4), np.empty(9)
+        mujoco.mju_euler2Quat(quat, np.asarray(
+            (list(angles) + [0.0] * 3)[:3], dtype=float), 'xyz')
+        mujoco.mju_quat2Mat(matrix, quat)
+        return matrix.reshape(3, 3)
+
+    def walk(node, seg, origin, orientation, is_root=False):
         j = node.get('joint')
         if not is_root and isinstance(j, dict) and j.get('name'):
-            here, below = segs[seg]['axis'], _joint_axis(j)
+            local_axis = _joint_axis(j)
+            below = orientation @ local_axis if local_axis is not None else None
+            here = segs[seg]['axis']
+            # Positions and both axes must share a frame before projecting the
+            # separation of parallel axes; adding local offsets loses fixed cant.
+            offset = origin - segs[seg]['origin']
             if here is not None and below is not None and abs(
-                    sum(a * b for a, b in zip(here, below))) > 0.999:
-                along = sum(o * a for o, a in zip(offset, here))
-                offset = [o - along * a for o, a in zip(offset, here)]
-            segs[seg]['child_joints'].append(math.sqrt(sum(v * v for v in offset)))
-            seg, offset = node['name'], [0.0, 0.0, 0.0]
+                    float(np.dot(here, below))) > 0.999:
+                offset = offset - float(np.dot(offset, here)) * here
+            segs[seg]['child_joints'].append(float(np.linalg.norm(offset)))
+            seg = node['name']
             segs[seg] = {'members': [], 'child_joints': [], 'root': False,
-                         'axis': _joint_axis(j)}
+                         'axis': below, 'origin': origin}
         g = node.get('geometry') or {}
         if g.get('link_mass_class') and float(g.get('link_l') or 0.0) > 0.0:
             segs[seg]['members'].append(node)
         for child in node.get('children', []) or []:
-            walk(child, seg, [a + b for a, b in zip(offset, pos(child))])
+            walk(child, seg, origin + orientation @ pos(child),
+                 orientation @ rotation(child))
 
+    root_origin = np.asarray(pos(tree), dtype=float)
     segs[tree['name']] = {'members': [], 'child_joints': [], 'root': True,
-                          'axis': None}
-    walk(tree, tree['name'], [0.0, 0.0, 0.0], is_root=True)
+                          'axis': None, 'origin': root_origin}
+    walk(tree, tree['name'], root_origin, rotation(tree), is_root=True)
 
     for seg_name, s in segs.items():
         by_cls: dict[str, list] = {}
