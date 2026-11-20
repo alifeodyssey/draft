@@ -15,7 +15,8 @@ j2_mot: L
 j3_mot: L
 j1_range: [-2.5, 2.5]
 j2_range: [-1.5707963267948966, 1.5707963267948966]
-j3_range: [-2.8, 0.0]
+# Negative: existing knee flexion; zero: straight; positive: reverse flexion.
+j3_range: [-2.8, 1.5707963267948966]
 
 # Illustrative lengths [m]: thigh from the canted mount to knee axis;
 # shank from knee axis to foot centre. The output connector is additional.

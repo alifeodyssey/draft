@@ -2,6 +2,7 @@
 
 import asyncio
 import math
+import threading
 from types import SimpleNamespace
 
 import mujoco
@@ -120,7 +121,8 @@ def test_motor_masses_are_attached_to_the_upstream_rigid_assembly(generated):
         assert model.body(f'{leg}_shank_link').mass[0] > 0
 
 
-@pytest.mark.parametrize('q', [(0, 0, 0), (0.3, 0.4, -0.8), (-0.25, -0.6, -1.1)])
+@pytest.mark.parametrize('q', [(0, 0, 0), (0.3, 0.4, -0.8), (-0.25, -0.6, -1.1),
+                               (0, 0, math.pi / 4), (0.3, 0.4, math.pi / 2)])
 @pytest.mark.parametrize('leg,sx,sy', LEGS)
 def test_forward_kinematics_matches_serial_chain(generated, leg, sx, sy, q):
     model, params, _ = generated
@@ -136,9 +138,10 @@ def test_forward_kinematics_matches_serial_chain(generated, leg, sx, sy, q):
     assert float(a1 @ a2) == pytest.approx(0.0, abs=1e-12)
 
 
-def test_equal_commands_produce_front_back_and_left_right_symmetry(generated):
+@pytest.mark.parametrize('knee', [-0.7, 0, math.pi / 4, math.pi / 2])
+def test_equal_commands_produce_front_back_and_left_right_symmetry(generated, knee):
     model, _, _ = generated
-    data = _pose(model, {leg: (0.2, 0.35, -0.7) for leg, _, _ in LEGS})
+    data = _pose(model, {leg: (0.2, 0.35, knee) for leg, _, _ in LEGS})
     fl = data.site_xpos[model.site('fl_foot').id]
     for leg, sx, sy in LEGS:
         np.testing.assert_allclose(data.site_xpos[model.site(f'{leg}_foot').id],
@@ -180,17 +183,47 @@ def test_j2_sweeps_knee_around_its_moving_axis(generated, q2):
                                   * math.cos(params['thigh_cant_rad']), abs=2e-6)
 
 
-def test_knee_rotation_keeps_joint_centre_and_thigh_fixed(generated):
+@pytest.mark.parametrize('angle', [-0.8, 0, math.pi / 4, math.pi / 2])
+def test_knee_rotation_keeps_joint_centre_and_thigh_fixed(generated, angle):
     model, params, _ = generated
     before = _pose(model, {'fl': (0.2, 0.4, 0)})
-    after = _pose(model, {'fl': (0.2, 0.4, -0.8)})
+    after = _pose(model, {'fl': (0.2, 0.4, angle)})
     jid, sid = model.joint('fl_j3').id, model.site('fl_foot').id
     np.testing.assert_allclose(before.xanchor[jid], after.xanchor[jid], atol=1e-12)
     bid = model.body('fl_thigh_link').id
     np.testing.assert_allclose(before.xmat[bid], after.xmat[bid], atol=1e-12)
-    assert np.linalg.norm(before.site_xpos[sid] - after.site_xpos[sid]) > 0.1
+    # The foot travels the chord of a circle centred at the knee, on either side.
+    assert np.linalg.norm(before.site_xpos[sid] - after.site_xpos[sid]) == pytest.approx(
+        2 * params['lower_leg_link_length'] * abs(math.sin(angle / 2)), abs=1e-6)
     assert np.linalg.norm(after.site_xpos[sid] - after.xanchor[jid]) == pytest.approx(
         params['lower_leg_link_length'], abs=1e-6)
+
+
+def test_viewer_knee_sliders_include_positive_quarter_turn(generated):
+    pytest.importorskip('viser')
+    pytest.importorskip('mjviser')
+    from draft.editor.viewer import Viewer3D
+
+    model, params, _ = generated
+    assert params['j3_range'] == pytest.approx([-2.8, math.pi / 2])
+    # Exercise the real slider scan/pose methods without starting a network server.
+    viewer = Viewer3D.__new__(Viewer3D)
+    viewer._mj_model = model
+    viewer._mj_data = mujoco.MjData(model)
+    viewer._scene_lock = threading.Lock()
+    viewer._simulate = False
+    viewer._scene = None
+    viewer._scan_joints()
+    knees = [j for j in viewer.joints() if j['name'].endswith('_j3')]
+    assert len(knees) == 4
+    for joint in knees:
+        assert model.joint(joint['name']).limited[0]
+        # Written MJCF numbers have six significant figures.
+        assert [joint['lo'], joint['hi']] == pytest.approx([-2.8, math.pi / 2], abs=5e-6)
+        viewer.set_joint(joint['qadr'], math.pi / 2)
+    for joint in viewer.joints():
+        if joint['name'].endswith('_j3'):
+            assert joint['value'] == pytest.approx(math.pi / 2)
 
 
 def test_structural_report_uses_actual_canted_joint_span(generated):
