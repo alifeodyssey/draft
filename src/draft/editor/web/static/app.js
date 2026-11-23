@@ -22,19 +22,29 @@ let motorRows = new Map();     // class → {cells}
 let chart = null;
 let fitData = null;        // the catalogue + curves, sent once on connect
 let fitCanvases = [];      // the four panels, rebuilt with the board
+const poseRows = new Map();
 
 /* ── connection ─────────────────────────────────────────────────────────── */
 
 function connect() {
   ws = new WebSocket(`ws://${location.host}/`);
   ws.onopen = () => send({ type: "hello" });
-  ws.onmessage = (e) => onState(JSON.parse(e.data));
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "pose") applyPose(msg.joints);
+    else onState(msg);
+  };
   ws.onclose = () => {
     setStatus({ text: "Disconnected — is the server still running?", kind: "error" });
     setTimeout(connect, 1500);
   };
 }
 const send = (msg) => ws && ws.readyState === 1 && ws.send(JSON.stringify(msg));
+setInterval(() => {
+  if (!document.hidden && state?.joints?.some((j) => j.continuous)) {
+    send({ type: "get_pose" });
+  }
+}, 250);
 
 /* Coalesce drags to one message per frame. */
 const pending = new Map();
@@ -76,7 +86,7 @@ function onState(s) {
   const sig = JSON.stringify([
     s.robot,
     s.groups.map((g) => [g.title, g.params.map((p) => p.key)]),
-    (s.joints || []).map((j) => j.name),
+    (s.joints || []).map((j) => [j.name, j.continuous, j.lo, j.hi, j.velocity_limit]),
     !!s.simulate,
     s.densityGroup.map((p) => p.key),
     (s.motors.classes || []).map((c) => c.cls),
@@ -128,6 +138,7 @@ function card(title, wide) {
 
 function buildBoard(s) {
   inputs.clear();
+  poseRows.clear();
   motorRows = new Map();
   chart = null;
   const board = $("#board");
@@ -451,6 +462,11 @@ function poseCard(s) {
   const rst = el("button", "btn", "Reset pose");
   rst.onclick = () => send({ type: "reset_pose" });
   row.append(sim, rst);
+  if (s.joints.some((j) => j.continuous)) {
+    const stop = el("button", "btn", "Stop wheel preview");
+    stop.onclick = () => send({ type: "stop_preview" });
+    row.append(stop);
+  }
   if (s.has_standing_pose) {
     const zero = el("button", "btn", "Zero pose");
     zero.disabled = !!s.simulate;
@@ -472,6 +488,28 @@ function poseCard(s) {
     const out = el("output", "pose-val", j.value.toFixed(3));
     head.append(out);
     const r = document.createElement("input");
+    if (j.continuous) {
+      r.type = "range";
+      r.min = String(-(j.velocity_limit || 0));
+      r.max = String(j.velocity_limit || 0);
+      r.step = "0.1";
+      r.value = String(j.preview_velocity || 0);
+      r.disabled = !!s.simulate || !j.velocity_limit;
+      const speed = el("output", "pose-val");
+      const zero = el("button", "btn", "Stop");
+      zero.type = "button";
+      zero.disabled = !!s.simulate;
+      zero.onclick = () => send({ type: "set_preview_velocity", joint: j.name, velocity: 0 });
+      r.oninput = () => {
+        speed.textContent = `${Number(r.value).toFixed(1)} rad/s · preview`;
+        sendCoalesced(`preview:${j.name}`,
+          { type: "set_preview_velocity", joint: j.name, velocity: Number(r.value) });
+      };
+      poseRows.set(j.name, { input: r, out, speed, continuous: true });
+      wrap.append(head, el("span", "hint", "Continuous hinge · kinematic preview"), r, speed, zero);
+      grid.append(wrap);
+      continue;
+    }
     r.type = "range";
     r.min = String(j.lo);
     r.max = String(j.hi);
@@ -485,10 +523,28 @@ function poseCard(s) {
         { type: "set_joint", qadr: j.qadr, value: Number(r.value) });
     };
     wrap.append(head, r);
+    poseRows.set(j.name, { input: r, out, continuous: false });
     grid.append(wrap);
   }
   body.append(grid);
   return node;
+}
+
+function applyPose(joints) {
+  if (state) state.joints = joints;
+  for (const j of joints || []) {
+    const row = poseRows.get(j.name);
+    if (!row) continue;
+    if (row.continuous) {
+      const phase = ((j.value % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      row.out.textContent = `${phase.toFixed(3)} rad · ${(j.value / (2 * Math.PI)).toFixed(2)} turns`;
+      row.speed.textContent = `${(j.preview_velocity || 0).toFixed(1)} rad/s · preview`;
+      if (row.input !== document.activeElement) row.input.value = String(j.preview_velocity || 0);
+    } else {
+      row.out.textContent = j.value.toFixed(3);
+      if (row.input !== document.activeElement) row.input.value = String(j.value);
+    }
+  }
 }
 
 function reportCard() {
@@ -613,6 +669,7 @@ function renderReport(r) {
 }
 
 function applyValues(s) {
+  applyPose(s.joints);
   const active = document.activeElement;
   for (const g of [...s.groups.map((x) => x.params), s.densityGroup].flat()) {
     const ref = inputs.get(g.key);

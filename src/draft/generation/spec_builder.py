@@ -167,8 +167,8 @@ class SpecEmitter:
         self._build_body(self.spec.worldbody, tree)
         self._emit_contact_excludes(tree)
 
-        # No <actuator> block: the consumer owns the controller. Peak torque goes
-        # on the joint's actuatorfrcrange, no-load speed into a custom numeric.
+        # Drives are opt-in; a consumer can still supply its own controller.
+        # No-load speed is metadata, not a hard angular-position stop.
         for jname, mp in self._motor_joints:
             self.spec.add_numeric(name=f'{jname}_velocity_limit',
                                   data=[float(mp['velocity'])])
@@ -423,17 +423,40 @@ class SpecEmitter:
                      in ('effort', 'velocity', 'friction', 'damping', 'armature')
                      if k in jspec}
         mp = motor_props(cls, self._params, overrides)
-        lo, hi = jspec['range']
+        limited = jspec.get('limited', True)
+        if not isinstance(limited, bool):
+            raise ValueError(f'{jname}: limited must be true or false')
+        if not limited and 'range' in jspec:
+            raise ValueError(f'{jname}: an unlimited hinge must omit range')
+        if limited and 'range' not in jspec:
+            raise ValueError(f'{jname}: a limited hinge needs range')
         j = body.add_joint(name=jname, type=mujoco.mjtJoint.mjJNT_HINGE,
                            axis=_size3(avec(str(jspec['axis']))))
-        j.limited = mujoco.mjtLimited.mjLIMITED_TRUE
-        j.range = [float(lo), float(hi)]
+        j.limited = (mujoco.mjtLimited.mjLIMITED_TRUE if limited
+                     else mujoco.mjtLimited.mjLIMITED_FALSE)
+        if limited:
+            lo, hi = jspec['range']
+            j.range = [float(lo), float(hi)]
         j.actfrclimited = mujoco.mjtLimited.mjLIMITED_TRUE
         j.actfrcrange = [-mp['effort'], mp['effort']]
         j.damping = _perdof(mp['damping'])
         j.frictionloss = mp['friction']
         j.armature = mp['armature']
         self._motor_joints.append((jname, mp))
+        actuator = jspec.get('actuator')
+        if actuator is not None:
+            if actuator != 'motor':
+                raise ValueError(f'{jname}: unsupported actuator {actuator!r}; expected motor')
+            # Effort and armature are already referred to the joint output shaft.
+            # Applying the gearbox reduction again would multiply torque twice.
+            drive = self.spec.add_actuator(name=f'{jname}_drive', target=jname,
+                                           trntype=mujoco.mjtTrn.mjTRN_JOINT)
+            drive.gear = [1.0, 0, 0, 0, 0, 0]
+            drive.gainprm = [1.0] + [0.0] * 9
+            drive.ctrllimited = mujoco.mjtLimited.mjLIMITED_TRUE
+            drive.ctrlrange = [-mp['effort'], mp['effort']]
+            drive.forcelimited = mujoco.mjtLimited.mjLIMITED_TRUE
+            drive.forcerange = [-mp['effort'], mp['effort']]
 
     # ── Geom helpers ───────────────────────────────────────────────────────────
 
@@ -452,6 +475,10 @@ class SpecEmitter:
             g.rgba = rgba(color)
         if cls is not None:
             g.classname = cls
+            if cls is self._visual:
+                # MjSpec has already copied the root defaults at construction.
+                g.contype = g.conaffinity = 0
+                g.group = 2
         if friction is not None:
             g.friction = _size3(friction)
         if mass is not None:
@@ -801,6 +828,10 @@ class SpecEmitter:
         kw = {}
         if bool(g.get('decorative', False)):
             rho, mass, kw = 0.0, None, {'cls': self._visual}
+        if 'friction' in g:
+            friction = g['friction']
+            kw['friction'] = (str(friction).split() if isinstance(friction, str)
+                              else friction)
 
         if shape == 'sphere':
             self._add_geom(body, f'{name}_geom', 'sphere', [r], role,

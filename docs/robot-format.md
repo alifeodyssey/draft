@@ -106,7 +106,7 @@ The top node is the root. Every node has `name` and `type`, plus:
 | key | meaning |
 |---|---|
 | `pos`, `euler` | body origin in the parent frame; optional rotation [rad] |
-| `joint` | `{name, axis, range, motor_class}`, `axis` one of `x y z -x -y -z`. Omit or `null` for a rigid body. Always a hinge. |
+| `joint` | `{name, axis, range, motor_class}`, `axis` one of `x y z -x -y -z`. Omit or `null` for a rigid body. Always a hinge; optional `limited: false` omits `range` for continuous rotation. |
 | `geometry` | per-type keys below |
 | `sites` | `[{name, pos}]` |
 | `children` | child nodes, `mirror_of` entries, `for_each` blocks |
@@ -114,6 +114,13 @@ The top node is the root. Every node has `name` and `type`, plus:
 `joint.motor_class` sets the joint's limits (peak torque → `actuatorfrcrange`;
 damping, friction, armature). `geometry.motor_class` sets the actuator the body
 draws at its tip, which drives the **child** joint. The two often differ.
+
+`joint.limited` defaults to `true`, requiring `range`. An unlimited hinge must
+omit `range`. Optional `joint.actuator: motor` emits `<joint-name>_drive`, a
+MuJoCo output-shaft torque motor with unit transmission and control/force limits
+`[-effort, effort]`. The reduction is already included in the motor design and
+armature; it is not applied to this drive a second time. Other actuator types
+are not supported here. Omit `actuator` to let a consumer supply its own drive.
 
 `${expr}` is evaluated with only `pi abs min max sqrt sin cos len round`, the helpers
 `mount_pos mount_euler edge_point edge_outward_normal rect_outline`, and any
@@ -191,6 +198,7 @@ body only its actuator, a housing bolted to the parent.
 | geom | `rho` / `mass` | `motor_rho` | density or explicit mass |
 | geom | `role` | `other` | mass role for the audit |
 | geom | `decorative` | `false` | `true`: weightless and non-colliding (eyes, bezels) |
+| geom | `friction` | model default | `[slide, spin, roll]` (list or space-separated string) |
 
 The foot's weightless riser runs down `max(foot_h − foot_plate_h, ankle motor
 radius)`. Sites `<name>_sphere_0..3` mark the sole corners, `<name>_toe_sphere` the toe.
@@ -300,9 +308,10 @@ A non-loft shape can be a `mesh.py` subclass of
 - Radians, `autolimits`, timestep 0.002, Newton. Inertia comes from geom shape
   and density; the root's from its mesh. Geoms collide with friction
   `0.7 0.1 0.1`; class `visual` never collides. Joint damping default 0.01.
-- **No `<actuator>` block.** Peak torque is the joint's `actuatorfrcrange`,
-  no-load speed the numeric `<joint>_velocity_limit`; the controller is the
-  consumer's.
+- By default there is no `<actuator>` block. A joint can opt into `actuator: motor`.
+  Peak torque is also the joint's `actuatorfrcrange`, no-load speed the numeric
+  `<joint>_velocity_limit`; that speed is metadata, not a hard speed limiter.
+  A controller remains the consumer's responsibility.
 - Written at 6 significant figures; `feasibility_report.yaml → xml_roundtrip`
   records the drift.
 

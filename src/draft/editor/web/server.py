@@ -305,6 +305,18 @@ class WebEditor:
             self.viewer.set_joint(int(msg["qadr"]), float(msg["value"]))
             return
 
+        elif kind == "set_preview_velocity":
+            self.viewer.set_preview_velocity(str(msg['joint']), float(msg['velocity']))
+
+        elif kind == "stop_preview":
+            self.viewer.stop_preview()
+
+        elif kind == "get_pose":
+            payload = json.dumps({'type': 'pose', 'joints': self.viewer.joints()})
+            await asyncio.gather(*(c.send(payload) for c in list(self._clients)),
+                                 return_exceptions=True)
+            return
+
         elif kind == "simulate":
             self.viewer.set_simulate(bool(msg.get("on")))
             self._set_status("Simulating." if self.viewer.simulate

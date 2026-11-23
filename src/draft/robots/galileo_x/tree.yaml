@@ -21,15 +21,19 @@ keyframes:
       fl_j1: ${standing_j1_rad}
       fl_j2: 0
       fl_j3: ${standing_j3_rad}
+      fl_j4: 0
       fr_j1: ${standing_j1_rad}
       fr_j2: 0
       fr_j3: ${standing_j3_rad}
+      fr_j4: 0
       rl_j1: ${standing_j1_rad}
       rl_j2: 0
       rl_j3: ${standing_j3_rad}
+      rl_j4: 0
       rr_j1: ${standing_j1_rad}
       rr_j2: 0
       rr_j3: ${standing_j3_rad}
+      rr_j4: 0
 
 children:
   - for_each: ${_legs}
@@ -91,8 +95,8 @@ children:
                     motor_class: ${j3_mot}
                     motor_for: j3
                   children:
-                    - name: ${leg.name}_shank_link
-                      type: sphere
+                    - name: ${leg.name}_j3_output
+                      type: basic
                       pos: [0, 0, "${-upper_leg_link_length}"]
                       joint:
                         name: ${leg.name}_j3
@@ -100,13 +104,75 @@ children:
                         range: ${j3_range}
                         motor_class: ${j3_mot}
                       geometry:
-                        link_axis: -z
-                        link_l: ${lower_leg_link_length}
+                        link_axis: "${'y' if leg.sy > 0 else '-y'}"
+                        link_l: ${shank_outboard_offset}
                         link_mass_class: shank
-                        link_rho: ${shank_rho}
                         link_render_r: ${lower_leg_link_render_r}
-                        sphere_dir: 1
-                        sphere_r: ${foot_sphere_r}
-                        sphere_color: ${foot_color}
-                      sites:
-                        - {name: "${leg.name}_foot", pos: [0, 0, "${-lower_leg_link_length}"]}
+                        motor_class: null
+                      children:
+                        - name: ${leg.name}_shank_link
+                          type: basic
+                          pos: [0, "${leg.sy * shank_outboard_offset}", 0]
+                          geometry:
+                            link_axis: -z
+                            link_l: ${lower_leg_link_length}
+                            link_mass_class: shank
+                            link_render_r: ${lower_leg_link_render_r}
+                            motor_class: null
+                          children:
+                            - name: ${leg.name}_j4_housing
+                              type: basic
+                              pos: [0, 0, "${-lower_leg_link_length}"]
+                              geometry:
+                                link_axis: "${'-y' if leg.sy > 0 else 'y'}"
+                                link_l: ${j4_housing_link_length}
+                                link_mass_class: shank
+                                link_render_r: ${lower_leg_link_render_r}
+                                motor_axis: y
+                                motor_class: ${j4_mot}
+                                motor_for: j4
+                              children:
+                                - name: ${leg.name}_wheel
+                                  type: geom
+                                  pos: [0, "${-leg.sy * j4_inboard_offset}", 0]
+                                  joint:
+                                    name: ${leg.name}_j4
+                                    axis: y
+                                    limited: false
+                                    actuator: motor
+                                    motor_class: ${j4_mot}
+                                  geometry:
+                                    shape: cylinder
+                                    axis: y
+                                    r: ${wheel_radius}
+                                    l: ${wheel_width}
+                                    mass: ${wheel_mass}
+                                    role: wheel
+                                    color: ${wheel_color}
+                                    friction: ${wheel_friction}
+                                  sites:
+                                    - {name: "${leg.name}_wheel_center", pos: [0, 0, 0]}
+                                    - {name: "${leg.name}_foot", pos: [0, 0, 0]}
+                                  children:
+                                    - name: ${leg.name}_wheel_stripe
+                                      type: geom
+                                      pos: [0, "${leg.sy * (wheel_width / 2 + 0.0006)}", 0]
+                                      geometry:
+                                        shape: box
+                                        r: 0
+                                        lx: ${wheel_radius * 1.6}
+                                        ly: 0.001
+                                        lz: ${wheel_radius * 0.12}
+                                        color: 0.9 0.94 1 1
+                                        decorative: true
+                                    - name: ${leg.name}_wheel_marker
+                                      type: geom
+                                      pos: [0, "${leg.sy * (wheel_width / 2 + 0.0006)}", "${wheel_radius * 0.65}"]
+                                      geometry:
+                                        shape: box
+                                        r: 0
+                                        lx: ${wheel_radius * 0.18}
+                                        ly: 0.001
+                                        lz: ${wheel_radius * 0.18}
+                                        color: 1 0.65 0.12 1
+                                        decorative: true

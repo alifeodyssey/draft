@@ -59,7 +59,9 @@ def _analytical_positions(params, sx, sy, q):
     mount = j2 + yaw @ [0, 0, -params['j2_output_offset']]
     thigh = yaw @ _ry(params['thigh_cant_rad'])
     knee = mount + thigh @ [0, 0, -params['upper_leg_link_length']]
-    foot = knee + thigh @ _ry(q[2]) @ [0, 0, -params['lower_leg_link_length']]
+    foot = knee + thigh @ _ry(q[2]) @ [0, sy * (params['shank_outboard_offset']
+                                               - params['j4_inboard_offset']),
+                                      -params['lower_leg_link_length']]
     return j1, j2, knee, foot
 
 
@@ -91,16 +93,17 @@ def test_joint_motor_and_foot_inventory(generated):
     model, _, report = generated
     hinges = [model.joint(i).name for i in range(model.njnt)
               if model.jnt_type[i] == mujoco.mjtJoint.mjJNT_HINGE]
-    assert set(hinges) == {f'{leg}_j{i}' for leg, _, _ in LEGS for i in (1, 2, 3)}
+    assert set(hinges) == {f'{leg}_j{i}' for leg, _, _ in LEGS for i in (1, 2, 3, 4)}
     assert not any('hip_roll' in name for name in hinges)
-    assert sum(model.geom_type == mujoco.mjtGeom.mjGEOM_SPHERE) == 4
+    assert sum(model.geom_type == mujoco.mjtGeom.mjGEOM_SPHERE) == 0
+    assert model.nu == 4
     motors = [model.geom(i).name for i in range(model.ngeom)
               if model.geom(i).name.endswith('_motor')]
-    assert len(motors) == 12
+    assert len(motors) == 16
     assert np.all(model.dof_armature[6:] > 0)
-    assert report['actuator_mass_audit']['n_joints'] == 12
+    assert report['actuator_mass_audit']['n_joints'] == 16
     assert report['actuator_mass_audit']['emitted_over_charged'] == pytest.approx(1.0)
-    assert report['actuator_packing']['n_actuator_geoms'] == 12
+    assert report['actuator_packing']['n_actuator_geoms'] == 16
     assert report['actuator_packing']['n_exempt'] == 0
     assert report['actuator_packing']['n_overlapping_pairs'] == 0
     assert report['actuator_packing']['n_neutral_pose_pairs'] == 0
@@ -114,7 +117,8 @@ def test_motor_masses_are_attached_to_the_upstream_rigid_assembly(generated):
     model, _, _ = generated
     for leg, _, _ in LEGS:
         for owner, motor in [('j1_housing', 'j1_housing'),
-                             ('j1_link', 'j1_link'), ('thigh_link', 'thigh_link')]:
+                             ('j1_link', 'j1_link'), ('thigh_link', 'thigh_link'),
+                             ('j4_housing', 'j4_housing')]:
             assert model.geom(f'{leg}_{motor}_motor').bodyid == model.body(f'{leg}_{owner}').id
         assert model.body(f'{leg}_j1_housing').jntnum[0] == 0
         assert model.body(f'{leg}_thigh_link').jntnum[0] == 0
@@ -154,7 +158,7 @@ def test_zero_pose_feet_are_tangent_to_floor(generated):
     data = _pose(model, {})
     for leg, _, _ in LEGS:
         assert data.site_xpos[model.site(f'{leg}_foot').id, 2] == pytest.approx(
-            params['foot_sphere_r'], abs=2e-6)
+            params['wheel_radius'], abs=2e-6)
 
 
 @pytest.mark.parametrize('leg,sx,sy', LEGS)
@@ -197,7 +201,8 @@ def test_knee_rotation_keeps_joint_centre_and_thigh_fixed(generated, angle):
     assert np.linalg.norm(before.site_xpos[sid] - after.site_xpos[sid]) == pytest.approx(
         2 * params['lower_leg_link_length'] * abs(math.sin(angle / 2)), abs=1e-6)
     assert np.linalg.norm(after.site_xpos[sid] - after.xanchor[jid]) == pytest.approx(
-        params['lower_leg_link_length'], abs=1e-6)
+        math.hypot(params['lower_leg_link_length'],
+                   params['shank_outboard_offset'] - params['j4_inboard_offset']), abs=1e-6)
 
 
 def test_viewer_knee_sliders_include_positive_quarter_turn(generated):
@@ -287,7 +292,7 @@ def test_editor_selects_changes_and_regenerates_galileo_x(tmp_path):
         assert params['upper_leg_link_length'] == 0.28
         assert params['torso_lx'] == 0.36
         assert params['torso_ly'] == 0.28
-        assert params['standing_j3_deg'] == -120
+        assert params['standing_j3_deg'] == -130
         model = loaded[-1]
         _assert_end_face_mounting(model, params)
         actual = _pose(model, {}).xanchor[model.joint('fl_j3').id]
@@ -324,11 +329,11 @@ def test_standing_pose_has_rearward_knees_and_four_feet_on_floor(generated):
         foot = data.site_xpos[model.site(f'{leg}_foot').id]
         assert knee[0] < data.xanchor[j2, 0]
         assert foot[0] > knee[0]
-        assert foot[2] == pytest.approx(params['foot_sphere_r'], abs=3e-6)
+        assert foot[2] == pytest.approx(params['wheel_radius'], abs=3e-6)
         # Reverse the spin sign to compare the upward motor-axis direction.
         axis = -sy * data.xaxis[j2]
-        np.testing.assert_allclose(axis, [math.sin(math.pi / 12), 0,
-                                         math.cos(math.pi / 12)], atol=5e-6)
+        np.testing.assert_allclose(axis, [math.sin(-params['standing_j1_rad']), 0,
+                                         math.cos(params['standing_j1_rad'])], atol=5e-6)
 
 
 def test_standing_pose_preserves_actuator_and_torso_clearance(generated):
@@ -358,7 +363,7 @@ def test_standing_pose_preserves_actuator_and_torso_clearance(generated):
 @pytest.mark.parametrize('overrides, expected_knee', [
     ({'torso_lx': 0.5, 'torso_ly': 0.32, 'torso_lz': 0.18,
       'upper_leg_link_length': 0.25, 'lower_leg_link_length': 0.24,
-      'thigh_cant_deg': 20}, -70),
+      'thigh_cant_deg': 20, 'standing_j1_deg': -15}, -70),
     ({'standing_j1_deg': -10, 'standing_j3_deg': -50}, -50),
 ])
 def test_standing_parameters_regenerate_keyframe_and_ground_height(tmp_path, overrides, expected_knee):
@@ -371,7 +376,7 @@ def test_standing_parameters_regenerate_keyframe_and_ground_height(tmp_path, ove
         assert math.degrees(data.qpos[model.joint(f'{leg}_j3').qposadr[0]]) == pytest.approx(
             expected_knee, abs=5e-4)
         assert data.site_xpos[model.site(f'{leg}_foot').id, 2] == pytest.approx(
-            params['foot_sphere_r'], abs=3e-6)
+            params['wheel_radius'], abs=3e-6)
 
 
 @pytest.mark.parametrize('overrides, joint', [
@@ -436,3 +441,135 @@ def test_viewer_without_standing_keyframe_keeps_mechanical_zero():
     data.qpos[2] = 5
     Viewer3D._reset_data(model, data)
     np.testing.assert_array_equal(data.qpos, model.qpos0)
+
+
+@pytest.mark.parametrize('angles', [(0, 0, 0), (-0.35, 0, -1.75), (0.4, 0.6, -0.9)])
+def test_wheels_follow_local_knee_pitch_and_clear_the_outboard_shank(generated, angles):
+    model, params, _ = generated
+    data = _pose(model, {leg: (*angles, 9 * math.pi) for leg, _, _ in LEGS})
+    for leg, _, sy in LEGS:
+        knee, wheel = (model.joint(f'{leg}_j{i}').id for i in (3, 4))
+        axis = data.xaxis[knee]
+        np.testing.assert_allclose(data.xaxis[wheel], axis, atol=1e-12)
+        if angles[1] == 0:
+            np.testing.assert_allclose(axis, [0, 1, 0], atol=1e-12)
+        shank = data.xpos[model.body(f'{leg}_shank_link').id]
+        assert sy * float((shank - data.xanchor[knee]) @ axis) == pytest.approx(
+            params['shank_outboard_offset'], abs=2e-6)
+        assert sy * float((data.xanchor[wheel] - shank) @ axis) == pytest.approx(
+            -params['j4_inboard_offset'], abs=2e-6)
+        distance = mujoco.mj_geomDistance(model, data, model.geom(f'{leg}_wheel_geom').id,
+                                         model.geom(f'{leg}_shank_link_link').id, 0.1, None)
+        assert distance == pytest.approx(params['assembly_clearance'], abs=2e-6)
+
+
+def test_spin_changes_only_wheel_rotor_and_all_drives_are_independent(generated):
+    model, params, report = generated
+    before = _pose(model, {'fl': (0.2, 0.3, -0.9, 0)})
+    after = _pose(model, {'fl': (0.2, 0.3, -0.9, 8 * math.pi + 0.4)})
+    for body in ('fl_j3_output', 'fl_shank_link', 'fl_j4_housing'):
+        bid = model.body(body).id
+        np.testing.assert_allclose(before.xpos[bid], after.xpos[bid], atol=1e-12)
+        np.testing.assert_allclose(before.xmat[bid], after.xmat[bid], atol=1e-12)
+    np.testing.assert_allclose(before.xanchor, after.xanchor, atol=1e-12)
+    assert not np.allclose(before.xmat[model.body('fl_wheel').id],
+                           after.xmat[model.body('fl_wheel').id])
+    assert report['mass_kg']['wheel'] == pytest.approx(4 * params['wheel_mass'])
+    expected = np.zeros(model.nv)
+    for index, (leg, _, _) in enumerate(LEGS):
+        jid = model.joint(f'{leg}_j4').id
+        aid = model.actuator(f'{leg}_j4_drive').id
+        assert not model.jnt_limited[jid]
+        assert model.actuator_trnid[aid, 0] == jid
+        after.ctrl[aid] = index + 1
+        expected[model.jnt_dofadr[jid]] = index + 1
+        assert model.body(f'{leg}_wheel').mass[0] == pytest.approx(params['wheel_mass'])
+        for suffix in ('stripe', 'marker'):
+            geom = model.geom(f'{leg}_wheel_{suffix}_geom')
+            assert model.geom_contype[geom.id] == model.geom_conaffinity[geom.id] == 0
+            assert model.body(int(geom.bodyid[0])).mass[0] == 0
+    mujoco.mj_forward(model, after)
+    np.testing.assert_allclose(after.qfrc_actuator, expected)
+    for suffix in ('j3_output', 'shank_link', 'j4_housing'):
+        assert report['structural_links'][f'fl_{suffix}_link']['joint_to_joint_m'] == pytest.approx(
+            params['lower_leg_link_length'], abs=2e-6)
+
+
+def test_web_wheel_preview_has_unbounded_phase_and_reset_clears_speeds(generated):
+    pytest.importorskip('viser')
+    pytest.importorskip('mjviser')
+    from draft.editor.viewer import Viewer3D
+    from draft.editor.web.server import WebEditor
+
+    model, _, _ = generated
+    viewer = Viewer3D.__new__(Viewer3D)
+    viewer.port = 0
+    viewer._mj_model, viewer._mj_data = model, _standing(model)
+    viewer._scene, viewer._scene_lock, viewer._simulate = None, threading.Lock(), False
+    viewer._scan_joints()
+    editor = WebEditor(viewer, repo_root())
+    before = viewer._mj_data.qpos.copy()
+
+    async def exercise():
+        await editor.handle({'type': 'set_preview_velocity', 'joint': 'fl_j4', 'velocity': 5})
+        await editor.handle({'type': 'set_preview_velocity', 'joint': 'rr_j4', 'velocity': -4})
+        viewer._step_preview(4)
+        assert viewer._mj_data.qpos[model.joint('fl_j4').qposadr[0]] == 20
+        assert viewer._mj_data.qpos[model.joint('rr_j4').qposadr[0]] == -16
+        for leg, _, _ in LEGS:
+            for i in (1, 2, 3):
+                adr = model.joint(f'{leg}_j{i}').qposadr[0]
+                assert viewer._mj_data.qpos[adr] == before[adr]
+        assert all(j['lo'] is None and j['hi'] is None for j in viewer.joints() if j['continuous'])
+        await editor.handle({'type': 'stop_preview'})
+        frozen = viewer._mj_data.qpos.copy()
+        viewer._step_preview(1)
+        np.testing.assert_array_equal(viewer._mj_data.qpos, frozen)
+        await editor.handle({'type': 'reset_pose'})
+        np.testing.assert_array_equal(viewer._mj_data.qpos, before)
+        await editor.handle({'type': 'set_preview_velocity', 'joint': 'fl_j4', 'velocity': 2})
+        await editor.handle({'type': 'simulate', 'on': True})
+        assert not any(j['preview_velocity'] for j in viewer.joints())
+        await editor.handle({'type': 'simulate', 'on': False})
+        assert not any(j['preview_velocity'] for j in viewer.joints())
+        await editor.handle({'type': 'reset_pose', 'zero': True})
+        np.testing.assert_array_equal(viewer._mj_data.qpos, model.qpos0)
+
+    asyncio.run(exercise())
+    for name, speed, message in [('fl_j3', 1, 'unlimited'), ('fl_j4', math.nan, 'finite'),
+                                  ('fl_j4', 51, 'velocity limit')]:
+        with pytest.raises(ValueError, match=message):
+            viewer.set_preview_velocity(name, speed)
+
+
+def test_sitting_path_checks_real_geometries_through_body_floor_contact(generated):
+    from draft.generation.wheel_leg_inspection import inspect_sitting
+    model, params, _ = generated
+    result = inspect_sitting(model, params)
+    report = result.report
+    assert report['valid']
+    assert report['samples'] > 300
+    assert report['max_joint_step_deg'] <= 0.5 + 1e-9
+    assert report['max_base_step_m'] <= 0.001 + 1e-9
+    assert report['minimum']['parts']['distance_m'] >= params['assembly_clearance'] - 2e-6
+    assert report['minimum']['hardware_floor']['distance_m'] == pytest.approx(0.000491, abs=1e-6)
+    assert report['end_torso_floor_gap_m'] == pytest.approx(0, abs=2e-6)
+    assert list(report['end_wheel_floor_gaps_m'].values()) == pytest.approx([0.0437255] * 4, abs=2e-6)
+    assert report['end_joint_degrees']['fl_j1'] == pytest.approx(-140)
+    assert report['end_joint_degrees']['fl_j3'] == pytest.approx(-145)
+
+
+@pytest.mark.parametrize('overrides,message', [
+    ({'wheel_radius': 0.01}, 'wheel_radius'),
+    ({'wheel_width': 0.01}, 'wheel_width'),
+    ({'wheel_mass': 0}, 'wheel_mass'),
+    ({'sitting_j1_deg': -200}, 'outside range'),
+    ({'sitting_j3_deg': -170}, 'outside range'),
+    ({'sitting_j3_deg': math.degrees(-2.8)}, 'parts:'),
+    ({'torso_lz': 0.11}, 'hardware_floor:'),
+])
+def test_invalid_wheel_or_sitting_design_reports_the_failure(generated, overrides, message):
+    from draft.generation.wheel_leg_inspection import inspect_sitting
+    model, params, _ = generated
+    with pytest.raises(ValueError, match=message):
+        inspect_sitting(model, {**params, **overrides})

@@ -1,6 +1,6 @@
-# Illustrative three-joint Galileo X-inspired concept, NOT measured product data.
+# Illustrative wheel-legged Galileo X-inspired concept, NOT measured product data.
 # SI internally; installation and standing-pose degree inputs convert explicitly.
-_design_provenance: "Illustrative geometry; user-specified pitch/yaw/pitch topology; Draft trend-estimated masses and actuator envelopes."
+_design_provenance: "User-specified pitch/yaw/pitch/wheel topology and saved body/leg/standing inputs; illustrative wheel dimensions and net mass; Draft trend-estimated motor envelopes and masses."
 
 # Inherited quadruped L-class example; exceeds the measured actuator frontier.
 # Keep its warnings visible. Packing and structure-overlap gates remain strict.
@@ -13,24 +13,26 @@ allow_hypothetical: true
 j1_mot: L
 j2_mot: L
 j3_mot: L
+j4_mot: L
 j1_range: [-2.5, 2.5]
 j2_range: [-1.5707963267948966, 1.5707963267948966]
 # Negative: existing knee flexion; zero: straight; positive: reverse flexion.
 j3_range: [-2.8, 1.5707963267948966]
 
 # Illustrative lengths [m]: thigh from the canted mount to knee axis;
-# shank from knee axis to foot centre. The output connector is additional.
-torso_lx: 0.25
-torso_ly: 0.22
-torso_lz: 0.11
+# shank from knee axis to wheel axis (perpendicular distance between axes).
+# Latest saved design: galileo_x_20261123_135703. Offsets are additional.
+torso_lx: 0.5
+torso_ly: 0.30
+torso_lz: 0.15
 torso_chamfer: 0.35
-upper_leg_link_length: 0.22
-lower_leg_link_length: 0.22
+upper_leg_link_length: 0.24
+lower_leg_link_length: 0.23
 thigh_cant_deg: 30.0
 thigh_cant_rad: ${thigh_cant_deg * pi / 180}
 # User-specified nominal J1 angle; knee default is an illustrative crouch.
 # These are poses, not changes to the mechanical zero or joint travel.
-standing_j1_deg: -15.0
+standing_j1_deg: -20.0
 standing_j1_rad: ${standing_j1_deg * pi / 180}
 standing_j3_deg: ${2 * (standing_j1_deg - thigh_cant_deg)}
 standing_j3_rad: ${standing_j3_deg * pi / 180}
@@ -38,7 +40,14 @@ assembly_clearance: 0.005
 link_motor_penetration: 0.005
 link_render_radius_scale: 0.70
 lower_leg_render_scale: 0.8
-foot_sphere_scale: 1.5
+# Illustrative wheel inputs; net wheel mass excludes the complete J4 motor.
+wheel_tire_thickness: 0.015
+wheel_mass: 0.5
+wheel_friction: 0.7 0.005 0.0001
+# Geometric sitting inspection, not a controller or a new standing pose.
+sitting_j1_deg: -140.0
+sitting_j3_deg: -145.0
+sitting_lift_height: 0.05
 
 # Trend-owned density declarations; values below are replaced and recorded.
 mass_composition_reference: quadruped
@@ -56,13 +65,18 @@ hip_abduction_link_length: ${j1_motor_L / 2 + j2_motor_r + assembly_clearance}
 hip_link_render_r: ${min(j1_motor_r, j2_motor_r, j2_motor_L / 2) * link_render_radius_scale}
 upper_leg_link_render_r: ${min(j3_motor_r, j3_motor_L / 2) * link_render_radius_scale}
 lower_leg_link_render_r: ${upper_leg_link_render_r * lower_leg_render_scale}
-foot_sphere_r: ${lower_leg_link_render_r * foot_sphere_scale}
+wheel_radius: ${j4_motor_r + assembly_clearance + wheel_tire_thickness}
+wheel_width: ${j4_motor_L + 2 * assembly_clearance}
+# The shank clears the outer J3 face; the whole wheel clears the inner shank face.
+shank_outboard_offset: ${j3_motor_L / 2 + assembly_clearance + lower_leg_link_render_r}
+j4_inboard_offset: ${lower_leg_link_render_r + assembly_clearance + wheel_width / 2}
+j4_housing_link_length: ${j4_inboard_offset + j4_motor_L / 2}
 # Clear the J2 output face even at the edge of the canted structural cylinder.
 j2_output_offset: ${j2_motor_L / 2 + upper_leg_link_render_r * abs(sin(thigh_cant_rad)) + assembly_clearance}
 thigh_joint_span: ${sqrt(upper_leg_link_length ** 2 + j2_output_offset ** 2 + 2 * upper_leg_link_length * j2_output_offset * cos(thigh_cant_rad))}
 size_metric_expr: ${thigh_joint_span + lower_leg_link_length}
-standing_height: ${j2_output_offset + (upper_leg_link_length + lower_leg_link_length) * cos(thigh_cant_rad) + foot_sphere_r}
-standing_pose_height: ${j2_output_offset * cos(standing_j1_rad) + upper_leg_link_length * cos(thigh_cant_rad - standing_j1_rad) + lower_leg_link_length * cos(thigh_cant_rad - standing_j1_rad + standing_j3_rad) + foot_sphere_r}
+standing_height: ${j2_output_offset + (upper_leg_link_length + lower_leg_link_length) * cos(thigh_cant_rad) + wheel_radius}
+standing_pose_height: ${j2_output_offset * cos(standing_j1_rad) + upper_leg_link_length * cos(thigh_cant_rad - standing_j1_rad) + lower_leg_link_length * cos(thigh_cant_rad - standing_j1_rad + standing_j3_rad) + wheel_radius}
 
 # sx only selects the front/rear mount; all knees share the rearward layout.
 # sy selects left/right placement and mirrored yaw commands.
@@ -76,4 +90,4 @@ link_color: 0.294 0.447 0.686 1.0
 motor_color: 0.161 0.243 0.376 1.0
 mot_detail_color: 0.067 0.102 0.161 1.0
 torso_color: 0.294 0.447 0.686 1.0
-foot_color: 0.180 0.275 0.427 1.0
+wheel_color: 0.055 0.065 0.080 1.0
