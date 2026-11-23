@@ -52,6 +52,22 @@ class Viewer3D:
     def simulate(self) -> bool:
         return self._simulate
 
+    @property
+    def has_standing_pose(self) -> bool:
+        return (self._mj_model is not None and mujoco.mj_name2id(
+            self._mj_model, mujoco.mjtObj.mjOBJ_KEY, 'standing') >= 0)
+
+    @staticmethod
+    def _reset_data(model: mujoco.MjModel, data: mujoco.MjData,
+                    *, zero: bool = False) -> None:
+        key = (-1 if zero else mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_KEY, 'standing'))
+        if key >= 0:
+            mujoco.mj_resetDataKeyframe(model, data, key)
+        else:
+            mujoco.mj_resetData(model, data)
+        mujoco.mj_forward(model, data)
+
     def set_simulate(self, on: bool) -> None:
         """Run physics, or hold the slider pose (resetting on the way out)."""
         self._simulate = bool(on)
@@ -93,8 +109,7 @@ class Viewer3D:
             # rewrites the same folder.
             model = mjcf_assets.load_model(load_path)
             data = mujoco.MjData(model)
-            mujoco.mj_resetData(model, data)
-            mujoco.mj_forward(model, data)
+            self._reset_data(model, data)
             with self._scene_lock:
                 self.server.scene.reset()
                 self._scene = ViserMujocoScene(self.server, model, num_envs=1)
@@ -107,12 +122,12 @@ class Viewer3D:
         self._scan_joints()
         return True
 
-    def reset_pose(self) -> None:
+    def reset_pose(self, *, zero: bool = False) -> None:
         with self._scene_lock:
-            if self._mj_model and self._mj_data and self._scene:
-                mujoco.mj_resetData(self._mj_model, self._mj_data)
-                mujoco.mj_forward(self._mj_model, self._mj_data)
-                self._scene.update_from_mjdata(self._mj_data)
+            if self._mj_model is not None and self._mj_data is not None:
+                self._reset_data(self._mj_model, self._mj_data, zero=zero)
+                if self._scene:
+                    self._scene.update_from_mjdata(self._mj_data)
 
     # ── joints ────────────────────────────────────────────────────────────────
 

@@ -1,5 +1,5 @@
 # Illustrative three-joint Galileo X-inspired concept, NOT measured product data.
-# SI internally; thigh_cant_deg is the sole degree input, converted explicitly.
+# SI internally; installation and standing-pose degree inputs convert explicitly.
 _design_provenance: "Illustrative geometry; user-specified pitch/yaw/pitch topology; Draft trend-estimated masses and actuator envelopes."
 
 # Inherited quadruped L-class example; exceeds the measured actuator frontier.
@@ -28,6 +28,12 @@ upper_leg_link_length: 0.22
 lower_leg_link_length: 0.22
 thigh_cant_deg: 30.0
 thigh_cant_rad: ${thigh_cant_deg * pi / 180}
+# User-specified nominal J1 angle; knee default is an illustrative crouch.
+# These are poses, not changes to the mechanical zero or joint travel.
+standing_j1_deg: -15.0
+standing_j1_rad: ${standing_j1_deg * pi / 180}
+standing_j3_deg: ${2 * (standing_j1_deg - thigh_cant_deg)}
+standing_j3_rad: ${standing_j3_deg * pi / 180}
 assembly_clearance: 0.005
 link_motor_penetration: 0.005
 link_render_radius_scale: 0.70
@@ -56,8 +62,10 @@ j2_output_offset: ${j2_motor_L / 2 + upper_leg_link_render_r * abs(sin(thigh_can
 thigh_joint_span: ${sqrt(upper_leg_link_length ** 2 + j2_output_offset ** 2 + 2 * upper_leg_link_length * j2_output_offset * cos(thigh_cant_rad))}
 size_metric_expr: ${thigh_joint_span + lower_leg_link_length}
 standing_height: ${j2_output_offset + (upper_leg_link_length + lower_leg_link_length) * cos(thigh_cant_rad) + foot_sphere_r}
+standing_pose_height: ${j2_output_offset * cos(standing_j1_rad) + upper_leg_link_length * cos(thigh_cant_rad - standing_j1_rad) + lower_leg_link_length * cos(thigh_cant_rad - standing_j1_rad + standing_j3_rad) + foot_sphere_r}
 
-# sx: front/back; sy: left/right. Explicit axes give symmetric commands.
+# sx only selects the front/rear mount; all knees share the rearward layout.
+# sy selects left/right placement and mirrored yaw commands.
 _legs:
   - {name: fl, sx: 1, sy: 1}
   - {name: fr, sx: 1, sy: -1}

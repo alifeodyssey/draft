@@ -451,7 +451,16 @@ function poseCard(s) {
   const rst = el("button", "btn", "Reset pose");
   rst.onclick = () => send({ type: "reset_pose" });
   row.append(sim, rst);
+  if (s.has_standing_pose) {
+    const zero = el("button", "btn", "Zero pose");
+    zero.disabled = !!s.simulate;
+    zero.onclick = () => send({ type: "reset_pose", zero: true });
+    row.append(zero);
+  }
   body.append(row);
+  if (s.has_standing_pose) {
+    body.append(el("p", "hint", "Reset pose restores standing; Zero pose shows mechanical zero."));
+  }
   body.append(el("p", "hint", s.simulate
     ? "Physics owns the pose while it runs; the sliders resume when you stop."
     : "Drag a joint to pose the robot. Nothing here changes the design."));

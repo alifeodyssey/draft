@@ -206,6 +206,7 @@ class WebEditor:
             # The model's joints and whether physics is running.
             "joints": self.viewer.joints(),
             "simulate": self.viewer.simulate,
+            "has_standing_pose": self.viewer.has_standing_pose,
             "preset": self.configs[self.robot].preset_name,
             "report": self.report,
         })
@@ -310,7 +311,7 @@ class WebEditor:
                              else "Physics stopped; pose reset.")
 
         elif kind == "reset_pose":
-            self.viewer.reset_pose()
+            self.viewer.reset_pose(zero=bool(msg.get("zero", False)))
             self._set_status("Pose reset.")
 
         elif kind == "view":

@@ -10,6 +10,7 @@ import math
 from pathlib import Path
 
 import mujoco
+import numpy as np
 
 from .tree_ops import (LINK_MOTOR_PENETRATION_M, avec, axis_center,
                        drawn_radius, euler_for_axis, link_span, proximal_inset,
@@ -79,6 +80,8 @@ class SpecEmitter:
         self._robot_dir = Path(robot_dir) if robot_dir else None
         self._asset_dir = Path(asset_dir) if asset_dir else None
         self._params: dict = {}
+        self._keyframes: list[dict] = []
+        self._keyframes_emitted = False
 
         self._motor_joints: list[tuple[str, dict]] = []
         # geom name → mass role (actuator / structure / trunk …).
@@ -149,6 +152,7 @@ class SpecEmitter:
 
     def emit(self, tree: dict, params: dict) -> None:
         self._params = params
+        self._keyframes = tree.get('keyframes') or []
         # Optional contact overrides from parameters.yaml.
         d = self.spec.default
         if 'geom_friction' in params:
@@ -856,10 +860,69 @@ class SpecEmitter:
 
     # ── Compilation ────────────────────────────────────────────────────────────
 
+    def _emit_keyframes(self, model: mujoco.MjModel) -> None:
+        """Resolve named joint positions against compiled addresses, leaving qpos0 intact."""
+        if not isinstance(self._keyframes, list):
+            raise ValueError('keyframes must be a list of named joint poses')
+        widths = {mujoco.mjtJoint.mjJNT_FREE: 7, mujoco.mjtJoint.mjJNT_BALL: 4,
+                  mujoco.mjtJoint.mjJNT_SLIDE: 1, mujoco.mjtJoint.mjJNT_HINGE: 1}
+        names = {model.key(i).name for i in range(model.nkey)}
+        prepared = []
+        for frame in self._keyframes:
+            if (not isinstance(frame, dict) or not isinstance(frame.get('name'), str)
+                    or not frame['name'].strip() or set(frame) - {'name', 'joints'}):
+                raise ValueError('each keyframe needs a nonempty name and a joints mapping')
+            name, joints = frame['name'], frame.get('joints', {})
+            if name in names:
+                raise ValueError(f'duplicate keyframe name: {name!r}')
+            names.add(name)
+            if not isinstance(joints, dict):
+                raise ValueError(f'keyframe {name!r}: joints must be a mapping')
+            qpos = model.qpos0.copy()
+            for joint_name, value in joints.items():
+                jid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, str(joint_name))
+                if jid < 0:
+                    raise ValueError(f'keyframe {name!r}: unknown joint {joint_name!r}')
+                kind = model.jnt_type[jid]
+                width = widths[kind]
+                try:
+                    values = np.asarray(value, dtype=float)
+                except (TypeError, ValueError) as exc:
+                    raise ValueError(f'keyframe {name!r}, joint {joint_name!r}: '
+                                     'positions must be finite numbers') from exc
+                if values.ndim == 0:
+                    values = values.reshape(1)
+                if values.shape != (width,) or not np.all(np.isfinite(values)):
+                    raise ValueError(f'keyframe {name!r}, joint {joint_name!r}: '
+                                     f'expected {width} finite qpos value(s)')
+                if width > 1:
+                    quat = values[3:] if width == 7 else values
+                    if not np.isclose(np.linalg.norm(quat), 1.0, rtol=0, atol=1e-6):
+                        raise ValueError(f'keyframe {name!r}, joint {joint_name!r}: '
+                                         'quaternion must have unit length (w x y z)')
+                if model.jnt_limited[jid]:
+                    lo, hi = model.jnt_range[jid]
+                    position = (2 * math.acos(min(1.0, abs(float(values[0]))))
+                                if kind == mujoco.mjtJoint.mjJNT_BALL else float(values[0]))
+                    if position < lo - 1e-10 or position > hi + 1e-10:
+                        raise ValueError(f'keyframe {name!r}, joint {joint_name!r}: '
+                                         f'position {position:.6g} is outside range '
+                                         f'[{lo:.6g}, {hi:.6g}] rad or m')
+                start = model.jnt_qposadr[jid]
+                qpos[start:start + width] = values
+            prepared.append((name, qpos))
+        # Validate every frame before mutating the specification.
+        for name, qpos in prepared:
+            self.spec.add_key(name=name, qpos=qpos)
+
     def compile(self, mesh_volume_m3: float | None = None) -> mujoco.MjModel:
         """Compile, then record actuator world poses from `mj_forward` at the neutral pose."""
         self._mesh_volume = mesh_volume_m3
         self._model = self.spec.compile()
+        if self._keyframes and not self._keyframes_emitted:
+            self._emit_keyframes(self._model)
+            self._model = self.spec.compile()
+            self._keyframes_emitted = True
         model = self._model
         data = mujoco.MjData(model)
         mujoco.mj_forward(model, data)

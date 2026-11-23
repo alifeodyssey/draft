@@ -53,13 +53,13 @@ def _analytical_positions(params, sx, sy, q):
     """Independent serial-chain equations, rather than reading the resolved tree."""
     j1 = np.array([sx * params['j1_mount_x'],
                    sy * params['j1_mount_y'], params['standing_height']])
-    hip = _ry(sx * q[0])
+    hip = _ry(-q[0])
     j2 = j1 + hip @ [0, sy * params['hip_abduction_link_length'], 0]
-    yaw = hip @ _rz(sx * sy * q[1])
+    yaw = hip @ _rz(-sy * q[1])
     mount = j2 + yaw @ [0, 0, -params['j2_output_offset']]
-    thigh = yaw @ _ry(-sx * params['thigh_cant_rad'])
+    thigh = yaw @ _ry(params['thigh_cant_rad'])
     knee = mount + thigh @ [0, 0, -params['upper_leg_link_length']]
-    foot = knee + thigh @ _ry(-sx * q[2]) @ [0, 0, -params['lower_leg_link_length']]
+    foot = knee + thigh @ _ry(q[2]) @ [0, 0, -params['lower_leg_link_length']]
     return j1, j2, knee, foot
 
 
@@ -76,7 +76,7 @@ def _assert_end_face_mounting(model, params):
             params['assembly_clearance'], abs=2e-6)
         assert centre[2] == pytest.approx(params['standing_height'], abs=2e-6)
         axis = data.xaxis[model.joint(f'{leg}_j1').id]
-        np.testing.assert_allclose(axis, [0, sx, 0], atol=1e-12)
+        np.testing.assert_allclose(axis, [0, -1, 0], atol=1e-12)
     left = data.geom_xpos[model.geom('fl_j1_housing_motor').id]
     right = data.geom_xpos[model.geom('fr_j1_housing_motor').id]
     assert left[1] - right[1] - 2 * model.geom('fl_j1_housing_motor').size[1] > 0
@@ -139,13 +139,14 @@ def test_forward_kinematics_matches_serial_chain(generated, leg, sx, sy, q):
 
 
 @pytest.mark.parametrize('knee', [-0.7, 0, math.pi / 4, math.pi / 2])
-def test_equal_commands_produce_front_back_and_left_right_symmetry(generated, knee):
-    model, _, _ = generated
+def test_equal_commands_keep_front_back_parallel_and_left_right_mirrored(generated, knee):
+    model, params, _ = generated
     data = _pose(model, {leg: (0.2, 0.35, knee) for leg, _, _ in LEGS})
     fl = data.site_xpos[model.site('fl_foot').id]
     for leg, sx, sy in LEGS:
         np.testing.assert_allclose(data.site_xpos[model.site(f'{leg}_foot').id],
-                                   [sx * fl[0], sy * fl[1], fl[2]], atol=1e-10)
+                                   [fl[0] + (sx - 1) * params['j1_mount_x'],
+                                    sy * fl[1], fl[2]], atol=2e-6)
 
 
 def test_zero_pose_feet_are_tangent_to_floor(generated):
@@ -157,13 +158,13 @@ def test_zero_pose_feet_are_tangent_to_floor(generated):
 
 
 @pytest.mark.parametrize('leg,sx,sy', LEGS)
-def test_j1_positive_collects_leg_and_j2_positive_abducts(generated, leg, sx, sy):
+def test_j1_positive_swings_forward_and_j2_positive_abducts(generated, leg, sx, sy):
     model, _, _ = generated
     baseline = _pose(model, {})
     knee = model.joint(f'{leg}_j3').id
     pitch = _pose(model, {leg: (0.15, 0, 0)})
     yaw = _pose(model, {leg: (0, 0.15, 0)})
-    assert sx * pitch.xanchor[knee, 0] < sx * baseline.xanchor[knee, 0]
+    assert pitch.xanchor[knee, 0] > baseline.xanchor[knee, 0]
     assert sy * yaw.xanchor[knee, 1] > sy * baseline.xanchor[knee, 1]
 
 
@@ -178,8 +179,8 @@ def test_j2_sweeps_knee_around_its_moving_axis(generated, q2):
     radius = float(np.linalg.norm(offset - height * axis))
     assert radius == pytest.approx(params['upper_leg_link_length']
                                   * math.sin(params['thigh_cant_rad']), abs=2e-6)
-    assert height == pytest.approx(-params['j2_output_offset']
-                                  - params['upper_leg_link_length']
+    assert height == pytest.approx(params['j2_output_offset']
+                                  + params['upper_leg_link_length']
                                   * math.cos(params['thigh_cant_rad']), abs=2e-6)
 
 
@@ -258,7 +259,7 @@ def test_editor_selects_changes_and_regenerates_galileo_x(tmp_path):
         loaded.append(load_model(path))
         return True
 
-    viewer = SimpleNamespace(port=0, simulate=False, joints=lambda: [],
+    viewer = SimpleNamespace(port=0, simulate=False, has_standing_pose=False, joints=lambda: [],
                              load_model=view, set_status=lambda text: None)
     editor = WebEditor(viewer, repo_root())
     editor.generated_base = tmp_path
@@ -269,7 +270,8 @@ def test_editor_selects_changes_and_regenerates_galileo_x(tmp_path):
         assert state['robot'] == 'galileo_x'
         assert state['unsupported'] is None
         editable = {p['key'] for group in state['groups'] for p in group['params']}
-        assert {'thigh_cant_deg', 'upper_leg_link_length', 'lower_leg_link_length'} <= editable
+        assert {'thigh_cant_deg', 'upper_leg_link_length', 'lower_leg_link_length',
+                'standing_j1_deg', 'standing_j3_deg'} <= editable
         await editor.handle({'type': 'generate'})
         assert editor.status['kind'] == 'ok'
         first_knee = _pose(loaded[-1], {}).xanchor[loaded[-1].joint('fl_j3').id].copy()
@@ -285,6 +287,7 @@ def test_editor_selects_changes_and_regenerates_galileo_x(tmp_path):
         assert params['upper_leg_link_length'] == 0.28
         assert params['torso_lx'] == 0.36
         assert params['torso_ly'] == 0.28
+        assert params['standing_j3_deg'] == -120
         model = loaded[-1]
         _assert_end_face_mounting(model, params)
         actual = _pose(model, {}).xanchor[model.joint('fl_j3').id]
@@ -294,3 +297,142 @@ def test_editor_selects_changes_and_regenerates_galileo_x(tmp_path):
 
     asyncio.run(exercise())
     assert source.read_bytes() == original
+
+
+def _standing(model):
+    data = mujoco.MjData(model)
+    key = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_KEY, 'standing')
+    assert key >= 0
+    mujoco.mj_resetDataKeyframe(model, data, key)
+    mujoco.mj_forward(model, data)
+    return data
+
+
+def test_standing_pose_has_rearward_knees_and_four_feet_on_floor(generated):
+    model, params, _ = generated
+    data = _standing(model)
+    assert data.qpos[2] == pytest.approx(params['standing_pose_height'], abs=2e-6)
+    assert model.qpos0[2] == pytest.approx(params['standing_height'], abs=2e-6)
+    assert data.qpos[2] < model.qpos0[2]
+    for leg, _, sy in LEGS:
+        for index, expected in [(1, params['standing_j1_rad']), (2, 0),
+                                (3, params['standing_j3_rad'])]:
+            assert data.qpos[model.joint(f'{leg}_j{index}').qposadr[0]] == pytest.approx(
+                expected, abs=5e-6)
+        j2 = model.joint(f'{leg}_j2').id
+        knee = data.xanchor[model.joint(f'{leg}_j3').id]
+        foot = data.site_xpos[model.site(f'{leg}_foot').id]
+        assert knee[0] < data.xanchor[j2, 0]
+        assert foot[0] > knee[0]
+        assert foot[2] == pytest.approx(params['foot_sphere_r'], abs=3e-6)
+        # Reverse the spin sign to compare the upward motor-axis direction.
+        axis = -sy * data.xaxis[j2]
+        np.testing.assert_allclose(axis, [math.sin(math.pi / 12), 0,
+                                         math.cos(math.pi / 12)], atol=5e-6)
+
+
+def test_standing_pose_preserves_actuator_and_torso_clearance(generated):
+    from draft.generation import packing
+    from draft.generation.spec_builder import SpecEmitter
+
+    model, params, _ = generated
+    data = _standing(model)
+    motors = []
+    for gi in range(model.ngeom):
+        geom = model.geom(gi)
+        if not geom.name.endswith('_motor'):
+            continue
+        body = int(model.geom_bodyid[gi])
+        r, h = model.geom_size[gi, :2]
+        motors.append({'name': geom.name, 'body': model.body(body).name,
+                       'path': SpecEmitter._body_path(model, body),
+                       'center': data.geom_xpos[gi], 'R': data.geom_xmat[gi],
+                       'half': [r, r, h]})
+    report = packing.check(motors)
+    assert report['n_overlapping_pairs'] == 0
+    assert report['n_neutral_pose_pairs'] == 0
+    structure = packing.structure_overlap(model, data, params['torso_rho'])
+    assert not packing.structure_violations(structure, ())
+
+
+@pytest.mark.parametrize('overrides, expected_knee', [
+    ({'torso_lx': 0.5, 'torso_ly': 0.32, 'torso_lz': 0.18,
+      'upper_leg_link_length': 0.25, 'lower_leg_link_length': 0.24,
+      'thigh_cant_deg': 20}, -70),
+    ({'standing_j1_deg': -10, 'standing_j3_deg': -50}, -50),
+])
+def test_standing_parameters_regenerate_keyframe_and_ground_height(tmp_path, overrides, expected_knee):
+    RobotGenerator(robot_dir('galileo_x')).generate(tmp_path, params_override=overrides)
+    model = mujoco.MjModel.from_xml_path(str(tmp_path / 'galileo_x.xml'))
+    data = _standing(model)
+    params = yaml.safe_load((tmp_path / 'parameters_resolved.yaml').read_text(encoding='utf-8'))
+    assert params['standing_j3_deg'] == expected_knee
+    for leg, _, _ in LEGS:
+        assert math.degrees(data.qpos[model.joint(f'{leg}_j3').qposadr[0]]) == pytest.approx(
+            expected_knee, abs=5e-4)
+        assert data.site_xpos[model.site(f'{leg}_foot').id, 2] == pytest.approx(
+            params['foot_sphere_r'], abs=3e-6)
+
+
+@pytest.mark.parametrize('overrides, joint', [
+    ({'standing_j1_deg': 200}, 'fl_j1'),
+    ({'standing_j3_deg': -170}, 'fl_j3'),
+])
+def test_out_of_range_standing_pose_is_rejected(tmp_path, overrides, joint):
+    with pytest.raises(ValueError, match=f"standing.*{joint}.*outside range"):
+        RobotGenerator(robot_dir('galileo_x')).generate(tmp_path, params_override=overrides)
+    assert not (tmp_path / 'galileo_x.xml').exists()
+
+
+def test_viewer_load_reset_zero_reload_and_stop_restore_named_stance(generated, tmp_path, monkeypatch):
+    pytest.importorskip('viser')
+    pytest.importorskip('mjviser')
+    from draft.editor import viewer as viewer_module
+    from draft.editor.web.server import WebEditor
+
+    model, _, _ = generated
+    scene = SimpleNamespace(update_from_mjdata=lambda data: None)
+    monkeypatch.setattr(viewer_module, 'ViserMujocoScene', lambda *a, **kw: scene)
+    monkeypatch.setattr(viewer_module.mjcf_assets, 'load_model', lambda path: model)
+    viewer = viewer_module.Viewer3D.__new__(viewer_module.Viewer3D)
+    viewer.server = SimpleNamespace(scene=SimpleNamespace(reset=lambda: None))
+    viewer.port = 0
+    viewer._scene_lock = threading.Lock()
+    viewer._simulate = False
+    assert viewer.load_model(tmp_path / 'galileo_x.xml')
+    assert viewer.has_standing_pose
+    expected = _standing(model).qpos.copy()
+    np.testing.assert_allclose(viewer._mj_data.qpos, expected)
+    editor = WebEditor(viewer, repo_root())
+    editor.generated_base = tmp_path
+
+    async def exercise():
+        await editor.handle({'type': 'select_robot', 'robot': 'galileo_x'})
+        assert editor.state()['has_standing_pose']
+        await editor.handle({'type': 'reset_pose', 'zero': True})
+        np.testing.assert_allclose(viewer._mj_data.qpos, model.qpos0)
+        await editor.handle({'type': 'reset_pose'})
+        np.testing.assert_allclose(viewer._mj_data.qpos, expected)
+        viewer.set_joint(model.joint('fl_j1').qposadr[0], 0.5)
+        await editor.handle({'type': 'simulate', 'on': True})
+        await editor.handle({'type': 'simulate', 'on': False})
+        np.testing.assert_allclose(viewer._mj_data.qpos, expected)
+
+    asyncio.run(exercise())
+    viewer.reset_pose(zero=True)
+    assert viewer.load_model(tmp_path / 'galileo_x.xml')
+    np.testing.assert_allclose(viewer._mj_data.qpos, expected)
+
+
+def test_viewer_without_standing_keyframe_keeps_mechanical_zero():
+    pytest.importorskip('viser')
+    pytest.importorskip('mjviser')
+    from draft.editor.viewer import Viewer3D
+
+    model = mujoco.MjModel.from_xml_string(
+        '<mujoco><worldbody><body pos="0 0 1"><freejoint/>'
+        '<geom type="sphere" size="0.1"/></body></worldbody></mujoco>')
+    data = mujoco.MjData(model)
+    data.qpos[2] = 5
+    Viewer3D._reset_data(model, data)
+    np.testing.assert_array_equal(data.qpos, model.qpos0)

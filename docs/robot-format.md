@@ -217,6 +217,31 @@ sensors:
   - {type: subtreeangmom, name: root_angmom, body: torso_link}
 ```
 
+### Named keyframes
+
+The root may declare optional poses using joint names rather than a compiled
+`qpos` ordering. Expressions resolve just as they do in the tree:
+
+```yaml
+keyframes:
+  - name: standing
+    joints:
+      torso_link_freejoint: [0, 0, 0.4, 1, 0, 0, 0]
+      hip: 0.3
+      knee: 0.6
+```
+
+A hinge or slide takes one value (rad or m), a ball joint a unit quaternion
+`[w, x, y, z]`, and a free joint `[x, y, z, w, qx, qy, qz]` in m and a unit
+quaternion. Omitted joints retain their mechanical-zero `qpos0` values. Unknown
+joint names, duplicate pose names, invalid dimensions/nonfinite values,
+non-unit quaternions and out-of-range joint positions are rejected.
+
+The generator writes native MuJoCo keyframes without changing `qpos0`, geometry,
+inertia or joint limits. The editor uses a keyframe named `standing` on load,
+Reset pose and stopping physics; Zero pose restores mechanical zero. Models
+without `standing` keep their existing zero-pose behaviour.
+
 ### `for_each`, `module:`, `tree.py`
 
 These exist for a morphology layer above the shipped robots, none of which use them.
