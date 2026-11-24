@@ -1,19 +1,43 @@
 # Illustrative wheel-legged Galileo X-inspired concept, NOT measured product data.
 # SI internally; installation and standing-pose degree inputs convert explicitly.
-_design_provenance: "User-specified pitch/yaw/pitch/wheel topology and saved body/leg/standing inputs; illustrative wheel dimensions and net mass; Draft trend-estimated motor envelopes and masses."
+_design_provenance: "User-specified topology, body/leg/pose and motor operating points; catalogue-anchored cylindrical motor proxies and masses; illustrative wheel net mass, tire thickness and gearbox losses; trend-estimated structural masses and armature."
 
-# Inherited quadruped L-class example; exceeds the measured actuator frontier.
-# Keep its warnings visible. Packing and structure-overlap gates remain strict.
-L_motor_effort: 150.0
-L_motor_velocity: 50.0
-L_motor_gear: 5.0
-L_motor_friction: 0.1
-L_motor_damping: 0.01
-allow_hypothetical: true
-j1_mot: L
-j2_mot: L
-j3_mot: L
-j4_mot: L
+# User-specified catalogue parts; explicit rounded speed inputs take precedence.
+# RS04/RS03 square housings retain Draft's cylindrical proxy, not CAD geometry.
+# Gearbox friction/damping remain illustrative inputs, not vendor measurements.
+J1_motor: RS04
+J1_motor_mode: torque_speed
+J1_motor_effort: 120.0
+J1_motor_velocity: 20.94
+J1_motor_gear: 9.0
+J1_motor_friction: 0.1
+J1_motor_damping: 0.01
+J2_motor: RS03
+J2_motor_mode: torque_speed
+J2_motor_effort: 60.0
+J2_motor_velocity: 20.42
+J2_motor_gear: 9.0
+J2_motor_friction: 0.1
+J2_motor_damping: 0.01
+J3_motor: RS03
+J3_motor_mode: torque_speed
+J3_motor_effort: 60.0
+J3_motor_velocity: 20.42
+J3_motor_gear: 9.0
+J3_motor_friction: 0.1
+J3_motor_damping: 0.01
+J4_motor: AK70-10
+J4_motor_mode: torque_speed
+J4_motor_effort: 24.0
+J4_motor_velocity: 32.46
+J4_motor_gear: 10.0
+J4_motor_friction: 0.1
+J4_motor_damping: 0.01
+allow_hypothetical: false
+j1_mot: J1
+j2_mot: J2
+j3_mot: J3
+j4_mot: J4
 j1_range: [-2.5, 2.5]
 j2_range: [-1.5707963267948966, 1.5707963267948966]
 # Negative: existing knee flexion; zero: straight; positive: reverse flexion.

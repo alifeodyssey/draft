@@ -155,7 +155,7 @@ def mass_coefficient(gear: float, anchor: Optional[dict],
 def frontier_of(category: Optional[str], laws: Optional[MotorTrends] = None) -> dict:
     """The catalogued density frontier for an actuator family (or ALL)."""
     laws = laws or motor_fits()
-    return laws.frontier.get(category or "ALL", laws.frontier["ALL"])
+    return laws.density_frontier(category)
 
 
 def frontier_ceilings(gear: float, omega: float, anchor: Optional[dict] = None,

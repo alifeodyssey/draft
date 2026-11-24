@@ -94,6 +94,13 @@ def resolve_catalog_motors(params: dict) -> dict:
         if not isinstance(name_val, str):
             continue  # numeric definition — nothing to resolve
 
+        # An explicitly edited/cleared public name supersedes old saved metadata.
+        for key in (f"_{cls}_motor_catalog", f"{cls}_motor_catalog_name",
+                    f"{cls}_motor_catalog_category"):
+            out.pop(key, None)
+        if not name_val.strip():
+            continue
+
         entry = find_by_name(name_val)
         if entry is None:
             available = ", ".join(catalog_names()[:8]) + " …"

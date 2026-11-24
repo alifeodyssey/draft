@@ -14,6 +14,7 @@ import yaml
 from draft.paths import repo_root
 _REPO_ROOT = repo_root()
 from draft.trends import motor_solve
+from draft.trends.motor_catalog import resolve_catalog_motors
 from draft.generation.generator import RobotGenerator
 from draft.editor.core.schema import ParamKind, ParamOwner, RobotSchema
 from draft.editor.shared import RobotTypeConfig, load_yaml, new_timestamped_dir, to_python
@@ -132,6 +133,7 @@ class MotorInputs:
     def __init__(self, classes, data: dict | None = None) -> None:
         self.classes = tuple(classes)
         self.params: dict[str, Any] = {}
+        self.catalog_names: dict[str, str] = {}
         if data is not None:
             self.seed(data)
 
@@ -140,7 +142,13 @@ class MotorInputs:
 
         A class `data` does not describe is left unchanged.
         """
+        data = resolve_catalog_motors(data)
         for cls in self.classes:
+            if not any(str(k).startswith((f'{cls}_motor', f'_{cls}_motor_catalog')) for k in data):
+                continue
+            # Keep a public empty name too: it overrides a named source default
+            # when a saved design deliberately switches back to the population fit.
+            self.catalog_names[cls] = motor_solve.catalog_name_for(cls, data) or ''
             try:
                 design = motor_solve.design_class(cls, data)
             except (ValueError, KeyError, TypeError):
@@ -159,14 +167,24 @@ class MotorInputs:
                     self.params[f"{cls}_motor_{key}"] = float(v)
 
     def set(self, params: dict) -> None:
-        self.params.update(params)
+        for key, value in params.items():
+            cls = next((c for c in self.classes if key == f'{c}_motor'), None)
+            if cls is not None:
+                self.set_catalog_name(cls, str(value))
+            else:
+                self.params[key] = value
+
+    def set_catalog_name(self, cls: str, name: str) -> None:
+        """Change the anchor while retaining explicitly stated operating inputs."""
+        self.catalog_names[cls] = name.strip()
 
     def collect(self) -> dict[str, Any]:
-        return dict(self.params)
+        return self.solve_params()
 
     def solve_params(self) -> dict[str, Any]:
         """The stated inputs the actuator solve reads."""
-        return dict(self.params)
+        return {**self.params, **{f'{cls}_motor': name
+                                 for cls, name in self.catalog_names.items()}}
 
     def design(self, cls: str) -> motor_solve.ClassDesign:
         return motor_solve.design_class(cls, self.solve_params())
@@ -310,9 +328,15 @@ class EditorSession:
             self.structured.update(incoming_structured)
             self.private = incoming_private
         self.motors.seed(data)
+        for cls, name in self.motors.catalog_names.items():
+            self.values[f'{cls}_motor'] = name
 
     def set(self, key: str, value: Any) -> None:
         self.values[key] = self.schema.coerce(key, value)
+        for cls in self.motors.classes:
+            if key == f'{cls}_motor':
+                self.motors.set_catalog_name(cls, str(self.values[key]))
+                break
 
     def get(self, key: str, default: Any = None) -> Any:
         return self.values.get(key, self.law_densities.get(key, default))
@@ -345,10 +369,12 @@ class EditorSession:
         params.update(self.values)
         params.update(self.law_densities)
         params.update(self.private)
-        # Last: the actuator solve owns every `<cls>_motor_*` key. Catalogue
-        # anchors are dropped; actuators are sized by the population fit.
+        # Last: one actuator solve owns the operating inputs and public names.
+        # Private cached anchors must not resurrect a cleared/changed name.
         for key in [k for k in params if str(k).endswith("_motor_catalog")]:
             params.pop(key)
+        for cls in self.motors.classes:
+            params.pop(f'{cls}_motor', None)
         params.update(self.motors.collect())
         return params
 

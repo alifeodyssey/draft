@@ -167,6 +167,30 @@ class MotorTrends:
         want = self._norm(name)
         return next((e for e in self.catalog if self._norm(e["name"]) == want), None)
 
+    def density_frontier(self, category: Optional[str] = None) -> dict:
+        """Use full-precision catalogue maxima without changing the published fits.
+
+        The stored summaries round their maxima to one decimal. A part at the
+        maximum (RS04, for example) can otherwise fail its own catalogue gate.
+        Percentiles and other statistics remain the frozen population summaries.
+        """
+        category = category if category in self.frontier else 'ALL'
+        frontier = dict(self.frontier[category])
+        rows = [e for e in self.catalog if category == 'ALL' or e.get('category') == category]
+        for field, numerator in (('torque_density_Nm_per_kg', 'tau_peak_Nm'),
+                                 ('power_density_W_per_kg', 'P_peak_W')):
+            stats = dict(frontier[field])
+            values = []
+            for entry in rows:
+                mass, value = entry.get('mass_kg'), entry.get(numerator)
+                if (isinstance(mass, (int, float)) and math.isfinite(mass) and mass > 0
+                        and isinstance(value, (int, float)) and math.isfinite(value) and value > 0):
+                    values.append((value / mass, entry['name']))
+            if values:
+                stats['max'], stats['argmax'] = max(values)
+            frontier[field] = stats
+        return frontier
+
     def anchor(self, name: str) -> Optional[dict]:
         """A catalogued part's measured envelope, the reference for relative sizing.
 
@@ -287,7 +311,7 @@ class MotorTrends:
         errors: list[str] = []
         warns: list[str] = []
         cat = sized.get("category") or "ALL"
-        front = self.frontier.get(cat, self.frontier["ALL"])
+        front = self.density_frontier(cat)
         mass = sized["mass"]
 
         td = tau_Nm / mass

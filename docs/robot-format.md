@@ -52,6 +52,7 @@ A class is a name prefix (`L`, `M`, `S`, or any other) with these **inputs**:
 | `<cls>_motor_mode` | which two of the above are stated (below); default `torque_speed` |
 | `<cls>_motor_aspect` | `L/D` of the package; default is the catalogue's split at this torque and reduction |
 | `<cls>_motor_friction`, `_damping` | asserted gearbox losses (no trend covers them) |
+| `<cls>_motor` | public catalogue part name, e.g. `RS04`; fills missing torque/speed/gear and anchors envelope/mass. Explicit inputs win. An empty string selects the population fit. Preserved by the editor. |
 | `_<cls>_motor_catalog` | anchor on a catalogued part (e.g. `AK80-64`); the trend charges only the deviation. State the reduction too. |
 
 | mode | stated | solved |

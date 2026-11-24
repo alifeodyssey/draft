@@ -110,7 +110,10 @@ def test_joint_motor_and_foot_inventory(generated):
     assert report['actuator_in_structure']['inside_cm3'] == 0
     assert sum(model.body_mass) == pytest.approx(report['total_mass_kg'], abs=1e-4)
     assert report['xml_roundtrip']['relative_drift'] < 1e-5
-    assert any('allow_hypothetical' in warning for warning in report['warnings'])
+    assert not any('allow_hypothetical' in warning for warning in report['warnings'])
+    assert not report['actuator_checks']['errors']
+    assert {name: cls['anchor'] for name, cls in report['actuator_checks']['classes'].items()} == {
+        'J1': 'RS04', 'J2': 'RS03', 'J3': 'RS03', 'J4': 'AK70-10'}
 
 
 def test_motor_masses_are_attached_to_the_upstream_rigid_assembly(generated):
@@ -552,9 +555,9 @@ def test_sitting_path_checks_real_geometries_through_body_floor_contact(generate
     assert report['max_joint_step_deg'] <= 0.5 + 1e-9
     assert report['max_base_step_m'] <= 0.001 + 1e-9
     assert report['minimum']['parts']['distance_m'] >= params['assembly_clearance'] - 2e-6
-    assert report['minimum']['hardware_floor']['distance_m'] == pytest.approx(0.000491, abs=1e-6)
+    assert report['minimum']['hardware_floor']['distance_m'] == pytest.approx(0.015, abs=1e-6)
     assert report['end_torso_floor_gap_m'] == pytest.approx(0, abs=2e-6)
-    assert list(report['end_wheel_floor_gaps_m'].values()) == pytest.approx([0.0437255] * 4, abs=2e-6)
+    assert list(report['end_wheel_floor_gaps_m'].values()) == pytest.approx([0.0711898] * 4, abs=2e-6)
     assert report['end_joint_degrees']['fl_j1'] == pytest.approx(-140)
     assert report['end_joint_degrees']['fl_j3'] == pytest.approx(-145)
 

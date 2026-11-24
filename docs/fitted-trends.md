@@ -86,6 +86,11 @@ declared, because its name says the body exists.
   the catalogue. Because mass grows as `τ^0.666`, torque density rises with
   torque, so the frontier is a ceiling on torque at a given reduction
   (`frontier_tau_max_Nm` in the report).
+  Runtime maxima use the full-precision catalogue torque or peak power divided
+  by mass. The frozen summaries round these values; using those rounded maxima
+  would incorrectly reject RS04 at its own operating point. Percentiles and the
+  fitted data files remain unchanged; checks, editor verdicts and ceiling curves
+  share the same full-precision boundary.
 - **Speed** against the gear-ratio speed trend, and the radius envelope.
 - **Mass audit.** Emitted motor geoms must weigh what the trend charged
   (`actuator_mass_audit`), and actuator and trunk mass fractions are compared
