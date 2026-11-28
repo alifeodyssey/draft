@@ -17,10 +17,13 @@ catalogued density frontier is a ceiling on tau; ``frontier_ceilings`` returns i
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+import math
+from bisect import bisect_left
 from typing import Optional, Sequence
 
 from .feasibility import MotorTrends, motor_fits
+from .motor_catalog import find_by_name, supplied_entry
 
 #: Modes in the order a picker should offer them.
 MODES: tuple[str, ...] = ("torque_speed", "torque_gear", "power_gear", "power_torque")
@@ -71,9 +74,12 @@ class OperatingPoint:
     mode: str
     gear_source: str
     notes: tuple[str, ...] = ()
+    torque_speed_curve: tuple[tuple[float, float], ...] = ()
 
     @property
     def power(self) -> float:
+        if self.torque_speed_curve:
+            return max(t * w for t, w in self.torque_speed_curve)
         return peak_power_W(self.tau, self.omega)
 
 
@@ -201,6 +207,10 @@ class ClassDesign:
     laws: Optional[MotorTrends] = None
 
     @property
+    def fixed_spec(self) -> bool:
+        return self.sized.get('source') == 'supplier_datasheet'
+
+    @property
     def category(self) -> str:
         return self.sized.get("category") or "ALL"
 
@@ -225,14 +235,16 @@ class ClassDesign:
             "torque_density": {"value": self.torque_density, "unit": "Nm/kg",
                                "p90": td["p90"], "max": td["max"],
                                "argmax": td["argmax"],
-                               "status": _density_status(self.torque_density, td)},
+                               "status": 'supplier_spec' if self.fixed_spec else _density_status(self.torque_density, td)},
             "power_density": {"value": self.power_density, "unit": "W/kg",
                               "p90": pd["p90"], "max": pd["max"],
                               "argmax": pd["argmax"],
-                              "status": _density_status(self.power_density, pd)},
+                              "status": 'supplier_spec' if self.fixed_spec else _density_status(self.power_density, pd)},
         }
 
     def ceilings(self, laws: Optional[MotorTrends] = None) -> dict:
+        if self.fixed_spec:
+            return {'tau_max': self.point.tau, 'binding': 'supplier_10s_peak'}
         return frontier_ceilings(self.point.gear, self.point.omega, self.anchor,
                                  self.sized.get("category"), laws or self.laws)
 
@@ -269,7 +281,9 @@ def design_class(cls: str, params: dict,
     warnings: list[str] = []
 
     cat_name = catalog_name_for(cls, params)
-    anchor = laws.anchor(cat_name) if cat_name else None
+    local = (find_by_name(cat_name, params) if cat_name and params.get('_motor_catalog') else None)
+    supplied = supplied_entry(local) if local and local.get('fixed_spec') else None
+    anchor = laws.anchor(cat_name, supplied) if cat_name else None
     if cat_name and anchor is None:
         warnings.append(
             f"[{cls}] catalogue part '{cat_name}' has no published envelope — "
@@ -290,8 +304,27 @@ def design_class(cls: str, params: dict,
                         power=power, anchor=anchor, laws=laws)
     warnings.extend(f"[{cls}] {n}" for n in point.notes)
 
+    if supplied is not None:
+        if mode != 'torque_speed':
+            raise ValueError(f'[{cls}]: fixed supplier specification requires torque_speed mode')
+        required = (supplied['tau_peak_Nm'], supplied['omega_NL_rad_s'], supplied['gear'])
+        if not all(math.isclose(a, b, rel_tol=1e-9) for a, b in
+                   zip((point.tau, point.omega, point.gear), required)):
+            raise ValueError(f'[{cls}]: fixed supplier specification cannot be resized; select a different motor')
+        expected_aspect = supplied['L_mm'] / supplied['OD_mm']
+        if aspect is not None and not math.isclose(aspect, expected_aspect, rel_tol=1e-9):
+            raise ValueError(f'[{cls}]: fixed supplier envelope cannot change aspect')
+        point = replace(point, torque_speed_curve=tuple(tuple(row) for row in supplied['torque_speed_curve']))
     sized = laws.size(point.tau, point.gear, anchor, aspect=aspect)
     errors, warns = laws.check(f"[{cls}]", point.tau, point.omega, point.gear, sized)
+    if supplied is not None:
+        sized.update(source='supplier_datasheet', specification=supplied,
+                     aspect_source='supplier_datasheet')
+        warns = [f'[{cls}]: supplied manufacturer mass/envelope and 10s peak; digitized curve is approximate. '
+                 'Duration and thermal limits are metadata, not runtime protection.'] + [
+                     f'Reference-survey diagnostic (linear tau*omega/4) only: {message}'
+                     for message in errors + warns]
+        errors = []
     warnings.extend(warns)
     return ClassDesign(cls=cls, point=point, sized=sized, errors=list(errors),
                        warnings=warnings, anchor=anchor, laws=laws)
@@ -309,6 +342,21 @@ def speed_axis(designs: Sequence[ClassDesign], n: int = 96,
 
 def envelope_curve(point: OperatingPoint, omegas: Sequence[float]) -> list[float]:
     """Linear stall-to-no-load torque at each speed; NaN past the no-load speed."""
+    if point.torque_speed_curve:
+        pairs = sorted((w, t) for t, w in point.torque_speed_curve)
+        speeds = [w for w, _ in pairs]
+        output = []
+        for w in omegas:
+            if w < speeds[0] or w > speeds[-1]:
+                output.append(float('nan'))  # no invented stall point/extrapolation
+                continue
+            i = bisect_left(speeds, w)
+            if i == 0:
+                output.append(pairs[0][1])
+            else:
+                a, b = pairs[i-1], pairs[i]
+                output.append(a[1] + (b[1]-a[1]) * (w-a[0]) / (b[0]-a[0]))
+        return output
     return [point.tau * (1.0 - w / point.omega) if w <= point.omega else float("nan")
             for w in omegas]
 

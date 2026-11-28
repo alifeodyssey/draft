@@ -191,12 +191,12 @@ class MotorTrends:
             frontier[field] = stats
         return frontier
 
-    def anchor(self, name: str) -> Optional[dict]:
+    def anchor(self, name: str, entry: Optional[dict] = None) -> Optional[dict]:
         """A catalogued part's measured envelope, the reference for relative sizing.
 
         None if the part has no published dimensions (the absolute fit is used).
         """
-        e = self.find_part(name)
+        e = entry if entry is not None else self.find_part(name)
         if e is None or not e.get("has_dims"):
             return None
         r = e["OD_mm"] / 2000.0

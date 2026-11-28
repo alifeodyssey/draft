@@ -78,7 +78,7 @@ def render_artifacts(folder: Path, output: Path, result, params: dict) -> None:
         frame(standing, standing_title).save(
             output / 'standing_side.png')
         camera.azimuth, camera.elevation, camera.distance = 135, -25, 1.65
-        frame(standing, 'Galileo X | outboard shanks, inboard J4 wheel hubs', True).save(
+        frame(standing, 'Galileo X | outboard shanks and J4 wheel assemblies', True).save(
             output / 'standing_3d.png')
         spin_frames = []
         commands = [4, -3, 2, -1]
@@ -152,6 +152,28 @@ def render_artifacts(folder: Path, output: Path, result, params: dict) -> None:
     ax.view_init(elev=23, azim=-55)
     fig.savefig(output / 'standing_axes.png', dpi=160)
     plt.close(fig)
+
+    profiles = [(cls, params.get(f'{cls}_motor_specification')) for cls in ('J1','J2','J3','J4')]
+    profiles = [(cls, spec) for cls, spec in profiles if spec]
+    if profiles:
+        fig, axes = plt.subplots(3, len(profiles), figsize=(5*len(profiles), 9), squeeze=False)
+        for col, (cls, spec) in enumerate(profiles):
+            curve = spec['performance_curve']
+            for row, (key, label, color) in enumerate([
+                    ('speed_rpm','Speed (rpm)','#2b6599'),
+                    ('ibus_a','DC bus current (A)','#2b8758'),
+                    ('efficiency_pct','Efficiency (%)','#bc603a')]):
+                axis = axes[row,col]
+                axis.plot(curve['torque_nm'], curve[key], marker='o', color=color, linewidth=1.8)
+                axis.axvline(spec['continuous_torque'], color='#9aa7b4', linestyle='--', linewidth=1)
+                axis.set(xlabel='Output torque (N m)', ylabel=label, xlim=(0,spec['peak_torque_10s']))
+                axis.grid(alpha=.2)
+                if row==0: axis.set_title(f"{cls} / {spec['name']}")
+        fig.suptitle('User-digitized supplier performance curves (approximate)', fontsize=15)
+        fig.tight_layout(rect=(0,0.035,1,.96))
+        fig.text(.5,.012,'Dashed: continuous torque. 10 s peak at right endpoint. No extrapolation.',ha='center')
+        fig.savefig(output/'motor_curves.png',dpi=160)
+        plt.close(fig)
 
 
 def main() -> int:

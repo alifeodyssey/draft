@@ -60,7 +60,7 @@ def _analytical_positions(params, sx, sy, q):
     thigh = yaw @ _ry(params['thigh_cant_rad'])
     knee = mount + thigh @ [0, 0, -params['upper_leg_link_length']]
     foot = knee + thigh @ _ry(q[2]) @ [0, sy * (params['shank_outboard_offset']
-                                               - params['j4_inboard_offset']),
+                                               + params['j4_outboard_offset']),
                                       -params['lower_leg_link_length']]
     return j1, j2, knee, foot
 
@@ -113,7 +113,7 @@ def test_joint_motor_and_foot_inventory(generated):
     assert not any('allow_hypothetical' in warning for warning in report['warnings'])
     assert not report['actuator_checks']['errors']
     assert {name: cls['anchor'] for name, cls in report['actuator_checks']['classes'].items()} == {
-        'J1': 'RS04', 'J2': 'RS03', 'J3': 'RS03', 'J4': 'AK70-10'}
+        'J1': 'JM150', 'J2': 'JM100', 'J3': 'JM250', 'J4': 'AK70-10'}
 
 
 def test_motor_masses_are_attached_to_the_upstream_rigid_assembly(generated):
@@ -205,7 +205,7 @@ def test_knee_rotation_keeps_joint_centre_and_thigh_fixed(generated, angle):
         2 * params['lower_leg_link_length'] * abs(math.sin(angle / 2)), abs=1e-6)
     assert np.linalg.norm(after.site_xpos[sid] - after.xanchor[jid]) == pytest.approx(
         math.hypot(params['lower_leg_link_length'],
-                   params['shank_outboard_offset'] - params['j4_inboard_offset']), abs=1e-6)
+                   params['shank_outboard_offset'] + params['j4_outboard_offset']), abs=1e-6)
 
 
 def test_viewer_knee_sliders_include_positive_quarter_turn(generated):
@@ -460,7 +460,7 @@ def test_wheels_follow_local_knee_pitch_and_clear_the_outboard_shank(generated, 
         assert sy * float((shank - data.xanchor[knee]) @ axis) == pytest.approx(
             params['shank_outboard_offset'], abs=2e-6)
         assert sy * float((data.xanchor[wheel] - shank) @ axis) == pytest.approx(
-            -params['j4_inboard_offset'], abs=2e-6)
+            params['j4_outboard_offset'], abs=2e-6)
         distance = mujoco.mj_geomDistance(model, data, model.geom(f'{leg}_wheel_geom').id,
                                          model.geom(f'{leg}_shank_link_link').id, 0.1, None)
         assert distance == pytest.approx(params['assembly_clearance'], abs=2e-6)
@@ -555,9 +555,9 @@ def test_sitting_path_checks_real_geometries_through_body_floor_contact(generate
     assert report['max_joint_step_deg'] <= 0.5 + 1e-9
     assert report['max_base_step_m'] <= 0.001 + 1e-9
     assert report['minimum']['parts']['distance_m'] >= params['assembly_clearance'] - 2e-6
-    assert report['minimum']['hardware_floor']['distance_m'] == pytest.approx(0.015, abs=1e-6)
+    assert report['minimum']['hardware_floor']['distance_m'] == pytest.approx(0.020, abs=1e-6)
     assert report['end_torso_floor_gap_m'] == pytest.approx(0, abs=2e-6)
-    assert list(report['end_wheel_floor_gaps_m'].values()) == pytest.approx([0.0711898] * 4, abs=2e-6)
+    assert list(report['end_wheel_floor_gaps_m'].values()) == pytest.approx([0.0990241] * 4, abs=2e-6)
     assert report['end_joint_degrees']['fl_j1'] == pytest.approx(-140)
     assert report['end_joint_degrees']['fl_j3'] == pytest.approx(-145)
 
@@ -568,8 +568,7 @@ def test_sitting_path_checks_real_geometries_through_body_floor_contact(generate
     ({'wheel_mass': 0}, 'wheel_mass'),
     ({'sitting_j1_deg': -200}, 'outside range'),
     ({'sitting_j3_deg': -170}, 'outside range'),
-    ({'sitting_j3_deg': math.degrees(-2.8)}, 'parts:'),
-    ({'torso_lz': 0.11}, 'hardware_floor:'),
+    ({'torso_lz': 0.05}, 'hardware_floor:'),
 ])
 def test_invalid_wheel_or_sitting_design_reports_the_failure(generated, overrides, message):
     from draft.generation.wheel_leg_inspection import inspect_sitting

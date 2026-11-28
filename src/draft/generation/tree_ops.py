@@ -148,6 +148,8 @@ def motor_props(motor_class: str, params: dict, overrides: dict | None = None) -
     }
     if overrides:
         props.update({k: float(v) for k, v in overrides.items()})
+    props['torque_speed_curve'] = params.get(f'{cls}_motor_torque_speed_curve')
+    props['specification'] = params.get(f'{cls}_motor_specification')
     return props
 
 

@@ -1,29 +1,29 @@
 # Illustrative wheel-legged Galileo X-inspired concept, NOT measured product data.
 # SI internally; installation and standing-pose degree inputs convert explicitly.
-_design_provenance: "User-specified topology, body/leg/pose and motor operating points; catalogue-anchored cylindrical motor proxies and masses; illustrative wheel net mass, tire thickness and gearbox losses; trend-estimated structural masses and armature."
+_design_provenance: "J1 JM150 / J2 JM100 / J3 JM250 supplier datasheet mass and cylindrical dimensions; user-digitized approximate curves; J4 AK70-10; user-specified 200 mm torso and outboard wheel assembly; illustrative wheel net mass/losses; trend-estimated structure and armature."
 
-# User-specified catalogue parts; explicit rounded speed inputs take precedence.
-# RS04/RS03 square housings retain Draft's cylindrical proxy, not CAD geometry.
+# Robot-local motor_catalog.json keeps the supplied hardware outside the paper population.
+# Default joint torque limits use the 10s peak, not continuous or 3s peak torque.
 # Gearbox friction/damping remain illustrative inputs, not vendor measurements.
-J1_motor: RS04
+J1_motor: JM150
 J1_motor_mode: torque_speed
-J1_motor_effort: 120.0
-J1_motor_velocity: 20.94
-J1_motor_gear: 9.0
+J1_motor_effort: 150.0
+J1_motor_velocity: 15.770795121020761
+J1_motor_gear: 30.0
 J1_motor_friction: 0.1
 J1_motor_damping: 0.01
-J2_motor: RS03
+J2_motor: JM100
 J2_motor_mode: torque_speed
-J2_motor_effort: 60.0
-J2_motor_velocity: 20.42
-J2_motor_gear: 9.0
+J2_motor_effort: 100.0
+J2_motor_velocity: 16.6818569905618
+J2_motor_gear: 36.0
 J2_motor_friction: 0.1
 J2_motor_damping: 0.01
-J3_motor: RS03
+J3_motor: JM250
 J3_motor_mode: torque_speed
-J3_motor_effort: 60.0
-J3_motor_velocity: 20.42
-J3_motor_gear: 9.0
+J3_motor_effort: 250.0
+J3_motor_velocity: 15.184364492350666
+J3_motor_gear: 25.0
 J3_motor_friction: 0.1
 J3_motor_damping: 0.01
 J4_motor: AK70-10
@@ -48,7 +48,7 @@ j3_range: [-2.8, 1.5707963267948966]
 # Latest saved design: galileo_x_20261123_135703. Offsets are additional.
 torso_lx: 0.5
 torso_ly: 0.30
-torso_lz: 0.15
+torso_lz: 0.20
 torso_chamfer: 0.35
 upper_leg_link_length: 0.24
 lower_leg_link_length: 0.23
@@ -85,16 +85,18 @@ motor_rho: 2700.0
 # The coaxial abduction member still carries the J2 stator outwards along y.
 j1_mount_x: ${torso_lx / 2 + j1_motor_r + assembly_clearance}
 j1_mount_y: ${torso_ly / 2 - j1_motor_L / 2 - assembly_clearance}
-hip_abduction_link_length: ${j1_motor_L / 2 + j2_motor_r + assembly_clearance}
+# Also clear the J3 housing from the thicker torso throughout the folded pose.
+hip_abduction_link_length: ${j1_motor_L / 2 + max(j2_motor_r + assembly_clearance, j3_motor_L / 2 + 2 * assembly_clearance)}
 hip_link_render_r: ${min(j1_motor_r, j2_motor_r, j2_motor_L / 2) * link_render_radius_scale}
 upper_leg_link_render_r: ${min(j3_motor_r, j3_motor_L / 2) * link_render_radius_scale}
 lower_leg_link_render_r: ${upper_leg_link_render_r * lower_leg_render_scale}
 wheel_radius: ${j4_motor_r + assembly_clearance + wheel_tire_thickness}
 wheel_width: ${j4_motor_L + 2 * assembly_clearance}
-# The shank clears the outer J3 face; the whole wheel clears the inner shank face.
+# J1's height remains the torso centreline (tree mounting z=0).
+# Shank clears the outer J3 face; J4 and wheel clear the outer shank face.
 shank_outboard_offset: ${j3_motor_L / 2 + assembly_clearance + lower_leg_link_render_r}
-j4_inboard_offset: ${lower_leg_link_render_r + assembly_clearance + wheel_width / 2}
-j4_housing_link_length: ${j4_inboard_offset + j4_motor_L / 2}
+j4_outboard_offset: ${lower_leg_link_render_r + assembly_clearance + wheel_width / 2}
+j4_housing_link_length: ${j4_outboard_offset + j4_motor_L / 2}
 # Clear the J2 output face even at the edge of the canted structural cylinder.
 j2_output_offset: ${j2_motor_L / 2 + upper_leg_link_render_r * abs(sin(thigh_cant_rad)) + assembly_clearance}
 thigh_joint_span: ${sqrt(upper_leg_link_length ** 2 + j2_output_offset ** 2 + 2 * upper_leg_link_length * j2_output_offset * cos(thigh_cant_rad))}

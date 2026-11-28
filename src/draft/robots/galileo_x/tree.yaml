@@ -124,7 +124,7 @@ children:
                               type: basic
                               pos: [0, 0, "${-lower_leg_link_length}"]
                               geometry:
-                                link_axis: "${'-y' if leg.sy > 0 else 'y'}"
+                                link_axis: "${'y' if leg.sy > 0 else '-y'}"
                                 link_l: ${j4_housing_link_length}
                                 link_mass_class: shank
                                 link_render_r: ${lower_leg_link_render_r}
@@ -134,7 +134,7 @@ children:
                               children:
                                 - name: ${leg.name}_wheel
                                   type: geom
-                                  pos: [0, "${-leg.sy * j4_inboard_offset}", 0]
+                                  pos: [0, "${leg.sy * j4_outboard_offset}", 0]
                                   joint:
                                     name: ${leg.name}_j4
                                     axis: y

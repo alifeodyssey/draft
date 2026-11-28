@@ -223,9 +223,9 @@ const COLS = [
 function actuatorCard(s) {
   const [node, body] = card("Actuator design", true);
   body.append(el("p", "hint",
-    "State two quantities; the fitted laws solve the rest. Greyed cells are " +
-    "derived — mass, envelope and armature always are. L/D is never greyed: " +
-    "the airgap law fixes r\u00b2\u00b7L, not how it splits between them."));
+    "Parametric motors use the fitted laws. Supplied hardware keeps its stated mass, " +
+    "dimensions and digitized curve. Greyed fields are derived or fixed supplier values; " +
+    "change the motor name to select another supplied part."));
 
   const table = el("table");
   const head = el("tr");
@@ -243,7 +243,8 @@ function actuatorCard(s) {
     const name = el("td");
     const sw = el("i", "swatch");
     sw.style.background = seriesColor(i);
-    name.append(sw, document.createTextNode(c.cls));
+    const label = el("span", null, c.cls);
+    name.append(sw, label);
     tr.append(name);
 
     const modeCell = el("td");
@@ -271,7 +272,7 @@ function actuatorCard(s) {
       tr.append(out[k]);
     }
     tbody.append(tr);
-    motorRows.set(c.cls, { mode, fields, out });
+    motorRows.set(c.cls, { mode, fields, out, label });
   });
   table.append(tbody);
   body.append(table);
@@ -695,32 +696,37 @@ function applyMotors(m, active) {
   for (const c of m.classes || []) {
     const row = motorRows.get(c.cls);
     if (!row) continue;
+    row.label.textContent = c.cls + (c.catalog_name ? ` · ${c.catalog_name}` : "");
     if (row.mode !== active) row.mode.value = c.mode;
+    row.mode.disabled = !!c.fixed_spec;
     for (const [key, , field] of COLS) {
       const inp = row.fields[key];
       const derived = !c.active.includes(field);
       inp.disabled = derived;
-      inp.title = derived ? "solved by the fitted laws from this mode's two inputs" : "";
+      inp.title = derived ? (c.fixed_spec ? "fixed supplier specification; change the motor name to select another part"
+        : "solved by the fitted laws from this mode's two inputs") : "";
       if (inp !== active) inp.value = fmt(c[key]);
     }
     row.out.mass.textContent = c.mass == null ? "—" : `${(c.mass * 1e3).toFixed(0)} g`;
     row.out.env.textContent = `⌀${(c.r * 2e3).toFixed(0)}×${(c.L * 1e3).toFixed(0)} mm`;
     row.out.env.title = c.volume == null ? "" :
-      `${(c.volume * 1e6).toFixed(0)} cm³ — set by the mass law; L/D moves r and L inside it`;
+      `${(c.volume * 1e6).toFixed(0)} cm³ — ` + (c.fixed_spec ? "supplier-stated physical envelope"
+        : "set by the mass law; L/D moves r and L inside it");
     row.out.armature.textContent = c.armature?.toPrecision(3) ?? "—";
     row.out.td.textContent = `${c.torque_density?.toFixed(0)}`;
     row.out.pd.textContent = `${c.power_density?.toFixed(0)}`;
     // Report the worse of the two density verdicts.
-    const rank = { ok: 0, above_p90: 1, beyond_frontier: 2 };
+    const rank = { ok: 0, above_p90: 1, beyond_frontier: 2, supplier_spec: 0 };
     const worst = rank[c.power_status] > rank[c.torque_status] ? c.power_status : c.torque_status;
     row.out.verdict.dataset.s = worst;
     row.out.verdict.textContent =
-      `${{ ok: "✓", above_p90: "▲", beyond_frontier: "✕" }[worst]} τ≤${c.tau_ceiling?.toFixed(0)}`;
+      `${{ ok: "✓", above_p90: "▲", beyond_frontier: "✕", supplier_spec: "spec" }[worst]} τ≤${c.tau_ceiling?.toFixed(0)}`;
     row.out.verdict.title =
       `τ/m ${c.torque_density?.toFixed(0)} Nm/kg (${c.torque_status}), ` +
       `P/m ${c.power_density?.toFixed(0)} W/kg (${c.power_status}); ` +
       `ceiling ${c.tau_ceiling?.toFixed(0)} N·m at N=${c.gear?.toFixed(0)}` +
-      (m.allow_hypothetical ? " — beyond-frontier is a warning (allow_hypothetical)"
+      (c.fixed_spec ? " — supplied 10s peak; digitized curve; duration not enforced"
+        : m.allow_hypothetical ? " — beyond-frontier is a warning (allow_hypothetical)"
         : " — beyond-frontier refuses generation");
   }
   if (chart) {
@@ -771,7 +777,7 @@ function renderLegend(m) {
   const line = el("i");
   line.style.borderTopColor = css("--muted");
   line.style.borderTopStyle = "dashed";
-  s.append(line, document.createTextNode("best-in-class frontier"));
+  s.append(line, document.createTextNode("reference survey frontier"));
   chart.legend.append(s);
 }
 

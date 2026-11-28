@@ -172,6 +172,11 @@ class SpecEmitter:
         for jname, mp in self._motor_joints:
             self.spec.add_numeric(name=f'{jname}_velocity_limit',
                                   data=[float(mp['velocity'])])
+            if mp.get('torque_speed_curve'):
+                self.spec.add_numeric(name=f'{jname}_torque_speed_curve',
+                                      data=[float(v) for row in mp['torque_speed_curve'] for v in row])
+                for field in ('continuous_torque', 'peak_torque_10s', 'peak_torque_3s'):
+                    self.spec.add_numeric(name=f'{jname}_{field}', data=[mp['specification'][field]])
 
         for s in tree.get('sensors', []) or []:
             self._emit_sensor(s)

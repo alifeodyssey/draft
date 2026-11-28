@@ -14,7 +14,7 @@ import yaml
 from draft.paths import repo_root
 _REPO_ROOT = repo_root()
 from draft.trends import motor_solve
-from draft.trends.motor_catalog import resolve_catalog_motors
+from draft.trends.motor_catalog import resolve_catalog_motors, with_robot_catalog, find_by_name
 from draft.generation.generator import RobotGenerator
 from draft.editor.core.schema import ParamKind, ParamOwner, RobotSchema
 from draft.editor.shared import RobotTypeConfig, load_yaml, new_timestamped_dir, to_python
@@ -134,6 +134,7 @@ class MotorInputs:
         self.classes = tuple(classes)
         self.params: dict[str, Any] = {}
         self.catalog_names: dict[str, str] = {}
+        self.custom_catalog: dict = {}
         if data is not None:
             self.seed(data)
 
@@ -142,7 +143,9 @@ class MotorInputs:
 
         A class `data` does not describe is left unchanged.
         """
-        data = resolve_catalog_motors(data)
+        if '_motor_catalog' in data:
+            self.custom_catalog = data['_motor_catalog']
+        data = resolve_catalog_motors({**data, '_motor_catalog': self.custom_catalog})
         for cls in self.classes:
             if not any(str(k).startswith((f'{cls}_motor', f'_{cls}_motor_catalog')) for k in data):
                 continue
@@ -177,13 +180,22 @@ class MotorInputs:
     def set_catalog_name(self, cls: str, name: str) -> None:
         """Change the anchor while retaining explicitly stated operating inputs."""
         self.catalog_names[cls] = name.strip()
+        entry = find_by_name(name.strip(), {'_motor_catalog': self.custom_catalog}) if name.strip() else None
+        if entry and entry.get('fixed_spec'):
+            self.params.update({f'{cls}_motor_mode': 'torque_speed',
+                                f'{cls}_motor_effort': entry['tau_peak_Nm'],
+                                f'{cls}_motor_velocity': entry['omega_NL_rad_s'],
+                                f'{cls}_motor_gear': entry['gear'],
+                                f'{cls}_motor_aspect': entry['L_mm'] / entry['OD_mm'],
+                                f'{cls}_motor_power': entry['P_peak_W']})
 
     def collect(self) -> dict[str, Any]:
         return self.solve_params()
 
     def solve_params(self) -> dict[str, Any]:
         """The stated inputs the actuator solve reads."""
-        return {**self.params, **{f'{cls}_motor': name
+        return {**({'_motor_catalog': self.custom_catalog} if self.custom_catalog else {}),
+                **self.params, **{f'{cls}_motor': name
                                  for cls, name in self.catalog_names.items()}}
 
     def design(self, cls: str) -> motor_solve.ClassDesign:
@@ -281,7 +293,7 @@ class EditorSession:
 
     def starting_params(self) -> dict[str, Any]:
         """The robot's shipped table with its preset applied on top."""
-        params = load_yaml(self.config.yaml_path)
+        params = with_robot_catalog(load_yaml(self.config.yaml_path), self.config.yaml_path.parent)
         preset = self.config.preset_path
         if preset is not None:
             try:
@@ -371,9 +383,8 @@ class EditorSession:
         params.update(self.private)
         # Last: one actuator solve owns the operating inputs and public names.
         # Private cached anchors must not resurrect a cleared/changed name.
-        for key in [k for k in params if str(k).endswith("_motor_catalog")]:
-            params.pop(key)
         for cls in self.motors.classes:
+            params.pop(f'_{cls}_motor_catalog', None)
             params.pop(f'{cls}_motor', None)
         params.update(self.motors.collect())
         return params

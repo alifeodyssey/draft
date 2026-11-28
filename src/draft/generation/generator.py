@@ -32,7 +32,7 @@ from ..trends.motor_solve import (DERIVED_FIELDS, FREE_INPUTS, MODE_INPUTS,
 from .spec_builder import SpecEmitter
 from .tree_ops import apply_distal_taper, expand_mirrors, measured_taper
 from . import packing
-from ..trends.motor_catalog import resolve_catalog_motors
+from ..trends.motor_catalog import resolve_catalog_motors, with_robot_catalog
 
 
 # ── YAML helpers ───────────────────────────────────────────────────────────────
@@ -187,6 +187,14 @@ def size_actuators(params: dict, strict: bool = True) -> tuple[dict, dict]:
             'frontier_tau_max_Nm': round(design.ceilings()['tau_max'], 1),
             'overridden_by_law': ignored,
         }
+        if design.fixed_spec:
+            specification = sized['specification']
+            params[f'{cls}_motor_torque_speed_curve'] = specification['torque_speed_curve']
+            params[f'{cls}_motor_specification'] = specification
+            report['classes'][cls].update(
+                source='supplier_datasheet', specification=specification,
+                power_source='maximum sampled torque * speed, not linear tau*omega/4',
+                linear_reference_power_W=point.tau * point.omega / 4)
 
     if 'link_rho' in params:
         # Checked against the design's own population's density band.
@@ -559,7 +567,7 @@ class RobotGenerator:
 
     def __init__(self, robot_dir: Path) -> None:
         self.robot_dir = Path(robot_dir)
-        self.params       = _load_yaml(self.robot_dir / 'parameters.yaml')
+        self.params       = with_robot_catalog(_load_yaml(self.robot_dir / 'parameters.yaml'), self.robot_dir)
         self.mesh         = _load_root_mesh(self.robot_dir)
 
         # tree.py, if present, takes precedence over tree.yaml.

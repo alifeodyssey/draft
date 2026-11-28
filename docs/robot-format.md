@@ -55,6 +55,25 @@ A class is a name prefix (`L`, `M`, `S`, or any other) with these **inputs**:
 | `<cls>_motor` | public catalogue part name, e.g. `RS04`; fills missing torque/speed/gear and anchors envelope/mass. Explicit inputs win. An empty string selects the population fit. Preserved by the editor. |
 | `_<cls>_motor_catalog` | anchor on a catalogued part (e.g. `AK80-64`); the trend charges only the deviation. State the reduction too. |
 
+A robot may also supply `motor_catalog.json` (schema version 1, `motors` list),
+as in `galileo_x`. These supplier specs are loaded into the private `_motor_catalog`
+snapshot carried by the editor and saved designs; they never modify the paper's
+114-part survey. A fixed supplier motor uses its stated mass, diameter and length,
+10-second peak, measured/digitized no-load speed and reduction. Its operating
+point and aspect cannot be resized; select another name to change hardware.
+The fitted rotor/armature estimate remains explicitly identified as estimated.
+Reference-survey density comparisons are diagnostic for these supplied parts;
+specification validity, fixed dimensions, joint limits and assembly gates remain strict.
+
+The local entries preserve continuous, 10s and 3s torque limits, rated electrical
+data, source image/hash, and approximate performance arrays. RPM converts to
+rad/s explicitly. Supplied torque-speed curves are piecewise linear only within
+their sampled speed domain (no invented stall point or extrapolation). The editor
+plots these curves; peak power is the maximum sampled `torque * speed`, not the
+linear-envelope `tau*omega/4`. Current/efficiency data remains available for future
+load/thermal work. Joint torque is capped at the declared 10s peak, but duration
+and thermal protection are not enforced by the generated model.
+
 | mode | stated | solved |
 |---|---|---|
 | `torque_speed` | `effort`, `velocity` | `gear` from the speed trend, if not given |

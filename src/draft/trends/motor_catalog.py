@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import warnings
+from pathlib import Path
 from typing import Optional
 
 _CATALOG: dict[str, list[dict]] = {}
@@ -42,9 +43,70 @@ def _norm(name: str) -> str:
     return name.lower().replace(" ", "_").replace("-", "_")
 
 
-def find_by_name(name: str) -> Optional[dict]:
+def with_robot_catalog(params: dict, robot_dir: Path) -> dict:
+    """Load robot-local supplied specs without extending the paper population."""
+    path = Path(robot_dir) / 'motor_catalog.json'
+    if not path.is_file():
+        return params
+    raw = json.loads(path.read_text(encoding='utf-8'))
+    if raw.get('schema_version') != 1 or not isinstance(raw.get('motors'), list):
+        raise ValueError(f'{path}: expected schema_version 1 and a motors list')
+    local = {}
+    for spec in raw['motors']:
+        entry = supplied_entry(spec)
+        if entry['name'] in local:
+            raise ValueError(f'{path}: duplicate motor {entry["name"]}')
+        local[entry['name']] = entry
+    return {**params, '_motor_catalog': local}
+
+
+def supplied_entry(spec: dict) -> dict:
+    """Validate SI conversions and keep the original approximate digitization."""
+    name = spec.get('name', '<unnamed>')
+    if not isinstance(name, str) or not name.strip() or name == '<unnamed>':
+        raise ValueError('supplied motor requires a nonempty name')
+    for key in ('continuous_torque', 'peak_torque_10s', 'peak_torque_3s',
+                'no_load_speed_rpm', 'gear_ratio', 'mass'):
+        if not isinstance(spec.get(key), (int, float)) or not math.isfinite(spec[key]) or spec[key] <= 0:
+            raise ValueError(f'{name}: {key} must be positive and finite')
+    if not spec['continuous_torque'] <= spec['peak_torque_10s'] <= spec['peak_torque_3s']:
+        raise ValueError(f'{name}: continuous / 10s / 3s torque ordering is invalid')
+    dims = spec.get('dimensions', [])
+    if len(dims) != 3 or any(not math.isfinite(v) or v <= 0 for v in dims) or dims[0] != dims[1]:
+        raise ValueError(f'{name}: expected cylindrical [diameter, diameter, length] in mm')
+    curve = spec.get('performance_curve', {})
+    keys = ('torque_nm', 'speed_rpm', 'ibus_a', 'efficiency_pct')
+    values = [curve.get(k, []) for k in keys]
+    if len(values[0]) < 2 or any(len(v) != len(values[0]) for v in values):
+        raise ValueError(f'{name}: performance arrays must have matching lengths')
+    if any(not math.isfinite(x) or x < 0 for v in values for x in v):
+        raise ValueError(f'{name}: performance values must be finite and nonnegative')
+    torque, speed, _, efficiency = values
+    if (torque[0] != 0 or any(b <= a for a, b in zip(torque, torque[1:]))
+            or any(b >= a for a, b in zip(speed, speed[1:]))
+            or any(x > 100 for x in efficiency)):
+        raise ValueError(f'{name}: invalid monotonic torque/speed or efficiency bounds')
+    if torque[-1] != spec['peak_torque_10s'] or speed[0] != spec['no_load_speed_rpm']:
+        raise ValueError(f'{name}: curve endpoints do not match the declared 10s/no-load point')
+    pairs = [[t, rpm * 2 * math.pi / 60] for t, rpm in zip(torque, speed)]
+    return {**spec, 'category': 'MidGear', 'has_dims': True,
+            'tau_peak_Nm': spec['peak_torque_10s'], 'omega_NL_rad_s': pairs[0][1],
+            'peak_torque': spec['peak_torque_10s'], 'no_load_speed': pairs[0][1],
+            'rated_speed': spec.get('rated_speed_rpm', 0) * 2 * math.pi / 60,
+            'no_load_speed_datasheet_min': spec.get('no_load_speed_datasheet_min_rpm', 0) * 2 * math.pi / 60,
+            'center_bore_diameter_m': spec.get('center_bore_diameter', 0) / 1000,
+            'gear': spec['gear_ratio'], 'mass_kg': spec['mass'],
+            'OD_mm': dims[0], 'L_mm': dims[2], 'fixed_spec': True,
+            'torque_speed_curve': pairs, 'P_peak_W': max(t * w for t, w in pairs)}
+
+
+def find_by_name(name: str, params: dict | None = None) -> Optional[dict]:
     """Return the catalog entry whose name matches (case/dash/space-insensitive)."""
     norm = _norm(name)
+    for entry in ((params or {}).get('_motor_catalog', {}).values()):
+        if any(_norm(n) == norm for n in (entry['name'], entry.get('model', ''),
+                                         entry['name'].replace('JM', 'M', 1))):
+            return entry
     for entry in load_catalog():
         if _norm(entry["name"]) == norm:
             return entry
@@ -85,7 +147,7 @@ def resolve_catalog_motors(params: dict) -> dict:
     keys already in *params* win.
     """
     catalog = load_catalog()
-    if not catalog:
+    if not catalog and not params.get('_motor_catalog'):
         return params
 
     out = dict(params)
@@ -101,7 +163,7 @@ def resolve_catalog_motors(params: dict) -> dict:
         if not name_val.strip():
             continue
 
-        entry = find_by_name(name_val)
+        entry = find_by_name(name_val, params)
         if entry is None:
             available = ", ".join(catalog_names()[:8]) + " …"
             warnings.warn(

@@ -115,8 +115,10 @@ class WebEditor:
                 "cls": d.cls,
                 "mode": d.point.mode,
                 # Mode-stated inputs plus those no mode derives (aspect ratio).
-                "active": list(motor_solve.MODE_INPUTS[d.point.mode]
-                               + motor_solve.FREE_INPUTS),
+                "active": ([] if d.fixed_spec else list(motor_solve.MODE_INPUTS[d.point.mode]
+                               + motor_solve.FREE_INPUTS)),
+                "fixed_spec": d.fixed_spec,
+                "catalog_name": d.sized['anchor'],
                 "tau": _finite(d.point.tau),
                 "omega": _finite(d.point.omega),
                 "gear": _finite(d.point.gear),
